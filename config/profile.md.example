@@ -1,0 +1,55 @@
+---
+name: YOUR_NAME
+age: YOUR_AGE
+city: YOUR_CITY
+work_format: YOUR_WORK_FORMAT
+onsite_cities:
+  - YOUR_ONSITE_CITY_1
+  - YOUR_ONSITE_CITY_2
+experience_years: YOUR_EXPERIENCE_YEARS
+field: YOUR_FIELD
+projects_count: YOUR_PROJECTS_COUNT
+clients: YOUR_CLIENTS
+website: YOUR_WEBSITE
+values: YOUR_VALUES
+skills:
+  - YOUR_SKILL_1
+  - YOUR_SKILL_2
+  - YOUR_SKILL_3
+cases:
+  - YOUR_CASE_1
+  - YOUR_CASE_2
+---
+
+## Имя
+YOUR_NAME
+
+## Возраст
+YOUR_AGE лет
+
+## Город
+YOUR_CITY
+
+## Формат работы
+YOUR_WORK_FORMAT
+
+## Опыт
+YOUR_EXPERIENCE_YEARS лет в YOUR_FIELD, реализовал около YOUR_PROJECTS_COUNT проектов
+
+## Ключевые компетенции
+- YOUR_SKILL_1
+- YOUR_SKILL_2
+- YOUR_SKILL_3
+
+## Крутые кейсы
+- YOUR_CASE_1
+- YOUR_CASE_2
+
+## Работал с
+YOUR_CLIENTS
+
+## Сайт/портфолио
+YOUR_WEBSITE
+
+## Что важно в работе
+YOUR_VALUES

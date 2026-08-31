@@ -1,0 +1,12 @@
+node_modules/
+dist/
+.env
+.env.local
+*.log
+.DS_Store
+.n8n-files/
+hh_session.json
+excluded.csv
+profile.md
+queries.txt
+*.*~
