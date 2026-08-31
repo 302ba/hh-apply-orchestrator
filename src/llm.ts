@@ -79,14 +79,15 @@ ${profile}
 
 Напиши только текст письма, без комментариев.`;
 
-  const { llmRetries } = getAutomationConfig();
+  const { llmRetries, llmMaxTokens } = getAutomationConfig();
   for (let attempt = 1; attempt <= llmRetries; attempt++) {
     try {
       if (usesMessagesEndpoint(provider, model)) {
         const response = await buildAnthropicClient().messages.create({
           model,
-          // Reasoning models can spend part of the budget before emitting text.
-          max_tokens: 1_024,
+          // Cover letters need direct text, not a reasoning trace.
+          thinking: { type: 'disabled' },
+          max_tokens: llmMaxTokens,
           temperature: 0.8,
           messages: [{ role: 'user', content: prompt }],
         });
@@ -110,7 +111,7 @@ ${profile}
       const response = await buildClient().chat.completions.create({
         model,
         messages: [{ role: 'user', content: prompt }],
-        max_tokens: 350,
+        max_tokens: llmMaxTokens,
         temperature: 0.8,
       });
       const text = response.choices[0]?.message?.content?.trim() ?? '';

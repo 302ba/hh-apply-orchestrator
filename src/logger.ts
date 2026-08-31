@@ -4,9 +4,14 @@ import { inspect } from 'node:util';
 import 'dotenv/config';
 
 const configuredLogFile = process.env.LOG_FILE?.trim();
-export const LOG_FILE = path.resolve(
-  configuredLogFile || path.join(process.cwd(), 'logs', 'auto-apply.log'),
-);
+const runTimestamp = new Date()
+  .toISOString()
+  .replace('T', '_')
+  .replaceAll(':', '-')
+  .replace('.', '-')
+  .replace('Z', '');
+const defaultLogFile = path.join(process.cwd(), 'logs', `auto-apply-${runTimestamp}.log`);
+export const LOG_FILE = path.resolve(configuredLogFile || defaultLogFile);
 
 function formatArgument(value: unknown): string {
   return typeof value === 'string' ? value : inspect(value, { depth: 5, colors: false });

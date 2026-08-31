@@ -1,5 +1,4 @@
 import path from 'node:path';
-import os from 'node:os';
 import fs from 'node:fs';
 import 'dotenv/config';
 import { fileConsole } from './logger.js';
@@ -33,6 +32,7 @@ export interface AutomationConfig {
   delayBetweenAppliesSeconds: number;
   readRetries: number;
   llmRetries: number;
+  llmMaxTokens: number;
 }
 
 const PROVIDER_PRESETS: Record<LlmProvider, { baseURL: string; defaultModel: string; envKey: string }> = {
@@ -99,12 +99,13 @@ export function getAutomationConfig(): AutomationConfig {
     delayBetweenAppliesSeconds: readNumber('HH_DELAY_BETWEEN_APPLIES_SECONDS', 7, 0),
     readRetries: readNumber('HH_READ_RETRIES', 2, 1),
     llmRetries: readNumber('LLM_RETRIES', 2, 1),
+    llmMaxTokens: readNumber('LLM_MAX_TOKENS', 1_024, 1),
   };
 }
 
-export const SESSION_DIR = process.env.N8N_FILES_DIR
-  ? process.env.N8N_FILES_DIR
-  : path.join(os.homedir(), '.n8n-files');
+export const SESSION_DIR = process.env.SESSION_FILES_DIR
+  ? process.env.SESSION_FILES_DIR
+  : '.session-files';
 
 export const SESSION_FILE = path.join(SESSION_DIR, 'hh_session.json');
 
