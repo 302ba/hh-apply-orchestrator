@@ -22,6 +22,7 @@ import { generateCoverLetter } from './llm.js';
 import { findExcludedTerm } from './exclusions.js';
 import { checkLocationEligibility, parseVacancyLocation, type VacancyLocation } from './vacancy-location.js';
 import { fileConsole } from './logger.js';
+import { saveCoverLetter } from './letters.js';
 
 const console = fileConsole;
 
@@ -67,8 +68,14 @@ export function findHandledApplicationStatus(text: string): string | undefined {
     [/^Отклик отклон(?:ён|ен)$/i, 'Отклик отклонён'],
     [/^Вы откликнулись$/i, 'Уже откликались'],
     [/^Резюме доставлено$/i, 'Отклик уже отправлен'],
+    [/^(?:Ваш )?отклик отправлен(?: работодателю)?$/i, 'Отклик уже отправлен'],
+    [/^Вы отказались от этой вакансии$/i, 'Вы уже отказались от вакансии'],
   ];
   return statuses.find(([pattern]) => lines.some((line) => pattern.test(line)))?.[1];
+}
+
+export function hasApplicationQuestionnaire(text: string): boolean {
+  return /для отклика необходимо ответить на несколько вопросов работодателя/i.test(text);
 }
 
 function vacancyKey(url: string): string {
@@ -205,13 +212,53 @@ async function getHandledApplicationStatus(page: Page): Promise<string | undefin
 }
 
 async function responseConfirmed(page: Page): Promise<boolean> {
-  const confirmation = page.locator("text=Вы откликнулись, text=Резюме доставлено").first();
+  const confirmation = page
+    .locator(
+      "text=Вы откликнулись, text=Резюме доставлено, text=Отклик отправлен, text=Ваш отклик отправлен, text=Отклик отправлен работодателю",
+    )
+    .first();
   try {
     await confirmation.waitFor({ state: 'visible', timeout: 5_000 });
     return true;
   } catch {
     return false;
   }
+}
+
+async function applicationFailureReason(page: Page): Promise<string> {
+  const bodyText = await page.locator('body').innerText().catch(() => '');
+  const lines = bodyText
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  if (/номер телефона|напишите телефон/i.test(bodyText)) {
+    return 'HH требует номер телефона перед отправкой отклика';
+  }
+  if (/captcha|капч/i.test(bodyText)) return 'HH показал CAPTCHA';
+
+  const signals = lines
+    .filter((line) => /отклик|резюме|ошибк|телефон|пожалуйста/i.test(line))
+    .slice(0, 4);
+  return signals.length > 0
+    ? `HH не подтвердил отправку отклика. Сигналы страницы: ${signals.join(' | ')}`
+    : 'HH не подтвердил отправку отклика; подходящий статус не найден';
+}
+
+async function applicationFailureResult(page: Page): Promise<ApplyResult> {
+  const bodyText = await page.locator('body').innerText().catch(() => '');
+  if (hasApplicationQuestionnaire(bodyText)) {
+    return {
+      status: 'skipped',
+      reason: 'HH требует ответить на вопросы работодателя; автоматический ответ не настроен',
+    };
+  }
+  return { status: 'error', reason: await applicationFailureReason(page) };
+}
+
+async function resultAfterSubmit(page: Page, successReason: string): Promise<ApplyResult> {
+  if (await responseConfirmed(page)) return { status: 'success', reason: successReason };
+  return applicationFailureResult(page);
 }
 
 async function applyToVacancy(page: Page, url: string, message: string): Promise<ApplyResult> {
@@ -243,9 +290,7 @@ async function applyToVacancy(page: Page, url: string, message: string): Promise
         if ((await submitBtn.count()) > 0) {
           await submitBtn.click();
           await page.waitForTimeout(3_000);
-          return (await responseConfirmed(page))
-            ? { status: 'success', reason: 'С письмом' }
-            : { status: 'error', reason: 'HH не подтвердил отправку отклика' };
+          return resultAfterSubmit(page, 'С письмом');
         }
       }
     }
@@ -287,9 +332,7 @@ async function applyToVacancy(page: Page, url: string, message: string): Promise
             if ((await submitBtn.count()) > 0) {
               await submitBtn.click();
               await page.waitForTimeout(3_000);
-              return (await responseConfirmed(page))
-                ? { status: 'success', reason: 'С письмом (меню)' }
-                : { status: 'error', reason: 'HH не подтвердил отправку отклика' };
+              return resultAfterSubmit(page, 'С письмом (меню)');
             }
           }
         }
@@ -317,9 +360,7 @@ async function applyToVacancy(page: Page, url: string, message: string): Promise
           console.log('      📨 Нажимаю кнопку отправки...');
           await submitBtn.click();
           await page.waitForTimeout(3_000);
-          return (await responseConfirmed(page))
-            ? { status: 'success', reason: 'С письмом (после отклика)' }
-            : { status: 'error', reason: 'HH не подтвердил отправку отклика' };
+          return resultAfterSubmit(page, 'С письмом (после отклика)');
         }
 
         const allButtons = await page.locator('button').all();
@@ -329,16 +370,14 @@ async function applyToVacancy(page: Page, url: string, message: string): Promise
             console.log(`      📨 Нашёл кнопку: ${txt}`);
             await btn.click();
             await page.waitForTimeout(3_000);
-            return (await responseConfirmed(page))
-              ? { status: 'success', reason: 'С письмом' }
-              : { status: 'error', reason: 'HH не подтвердил отправку отклика' };
+            return resultAfterSubmit(page, 'С письмом');
           }
         }
       }
 
       if (await responseConfirmed(page)) return { status: 'success', reason: 'Без письма' };
 
-      return { status: 'error', reason: 'HH не подтвердил отправку отклика' };
+      return applicationFailureResult(page);
     }
 
     return { status: 'error', reason: 'Кнопка не найдена' };
@@ -432,6 +471,16 @@ async function main(): Promise<void> {
           if (!letter) {
             console.log(`      ⏭️  Пропущено: ${letterResult.reason ?? 'письмо не сгенерировано'}`);
             stats.skipped++;
+            continue;
+          }
+
+          try {
+            const letterPath = saveCoverLetter(vacancy, letter);
+            console.log(`      💾 Письмо сохранено: ${letterPath}`);
+          } catch (err) {
+            const reason = err instanceof Error ? err.message : String(err);
+            console.log(`      ❌ Ошибка сохранения письма: ${reason}`);
+            stats.error++;
             continue;
           }
 

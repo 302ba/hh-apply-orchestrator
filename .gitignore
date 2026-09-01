@@ -3,6 +3,7 @@ dist/
 .env
 .env.local
 *.log
+letters/
 .DS_Store
 .n8n-files/
 hh_session.json

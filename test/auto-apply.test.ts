@@ -1,13 +1,19 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import test from 'node:test';
 import {
   buildSearchUrl,
   deduplicateVacancies,
   findHandledApplicationStatus,
+  hasApplicationQuestionnaire,
   normalizeVacancyUrl,
 } from '../src/auto-apply.ts';
 import { parseCsvList } from '../src/config-loader.ts';
 import { findExcludedTerm } from '../src/exclusions.ts';
+import { saveCoverLetter } from '../src/letters.ts';
+import { cleanCoverLetter } from '../src/llm.ts';
 import { checkLocationEligibility, parseVacancyLocation } from '../src/vacancy-location.ts';
 
 test('normalizes vacancy URLs and removes tracking parameters', () => {
@@ -24,10 +30,16 @@ test('passes excluded terms to HH search URL', () => {
 test('detects rejected and already-submitted application statuses', () => {
   assert.equal(findHandledApplicationStatus('Формат работы\nУдалённо\nВам отказали'), 'Работодатель отказал в отклике');
   assert.equal(findHandledApplicationStatus('Резюме доставлено'), 'Отклик уже отправлен');
+  assert.equal(findHandledApplicationStatus('Вы отказались от этой вакансии'), 'Вы уже отказались от вакансии');
 });
 
 test('ignores status words inside vacancy description text', () => {
   assert.equal(findHandledApplicationStatus('В описании сказано: вам отказали ранее'), undefined);
+});
+
+test('detects HH employer questionnaire requirement', () => {
+  assert.equal(hasApplicationQuestionnaire('Для отклика необходимо ответить на несколько вопросов работодателя'), true);
+  assert.equal(hasApplicationQuestionnaire('Отклик отправлен работодателю'), false);
 });
 
 test('deduplicates vacancy IDs across hostnames and query parameters', () => {
@@ -116,4 +128,23 @@ test('matches excluded terms case-insensitively without substring false positive
   assert.equal(findExcludedTerm('ASP.NET developer', terms), '.net');
   assert.equal(findExcludedTerm('React Native developer', terms), 'react');
   assert.equal(findExcludedTerm('Google Analytics and Golang', terms), undefined);
+});
+
+test('saves generated letter with vacancy metadata', () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'hh-letters-'));
+  const filePath = saveCoverLetter(
+    { title: 'PHP / Vue: разработчик?', employer: 'Company', url: 'https://hh.ru/vacancy/123' },
+    'Добрый день! Письмо.',
+    directory,
+  );
+
+  assert.equal(path.basename(filePath), '123-PHP - Vue- разработчик-.md');
+  assert.match(fs.readFileSync(filePath, 'utf8'), /Добрый день! Письмо\./);
+});
+
+test('removes unavailable website placeholders from generated letter', () => {
+  assert.equal(
+    cleanCoverLetter('Опыт и кейсы: [ссылка на сайт]\nПортфолио: [YOUR_WEBSITE]'),
+    'Опыт и кейсы: \nПортфолио:',
+  );
 });

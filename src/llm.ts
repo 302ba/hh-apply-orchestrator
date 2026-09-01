@@ -45,6 +45,14 @@ export interface CoverLetterResult {
   reason?: string;
 }
 
+export function cleanCoverLetter(text: string): string {
+  return text
+    .replace(/\[(?:ссылка(?: на сайт)?|сайт|website|portfolio|link|YOUR_[A-Z_]+)\]/giu, '')
+    .replace(/[ \t]{2,}/g, ' ')
+    .replace(/\n[ \t]+/g, '\n')
+    .trim();
+}
+
 export async function generateCoverLetter(
   title: string,
   employer: string,
@@ -68,6 +76,8 @@ export async function generateCoverLetter(
 - Без длинных тире (—), без восклицательных знаков в конце каждого предложения
 - Пиши так, будто реальный человек пишет реальному человеку
 - Русский язык
+- Не используй placeholders в квадратных скобках, например [ссылка на сайт] или [YOUR_WEBSITE]
+- Если сайт/портфолио не указан в профиле, полностью пропусти ссылку и не упоминай её
 
 ОБО МНЕ:
 ${profile}
@@ -91,11 +101,11 @@ ${profile}
           temperature: 0.8,
           messages: [{ role: 'user', content: prompt }],
         });
-        const text = response.content
+        const text = cleanCoverLetter(response.content
           .filter((block): block is Anthropic.TextBlock => block.type === 'text')
           .map((block) => block.text)
           .join('')
-          .trim();
+        );
         if (text) return { text };
 
         const blockTypes = response.content.map((block) => block.type).join(', ') || 'нет';
@@ -114,7 +124,7 @@ ${profile}
         max_tokens: llmMaxTokens,
         temperature: 0.8,
       });
-      const text = response.choices[0]?.message?.content?.trim() ?? '';
+      const text = cleanCoverLetter(response.choices[0]?.message?.content ?? '');
       if (text) return { text };
 
       const choice = response.choices[0];
