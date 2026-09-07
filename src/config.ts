@@ -1,4 +1,5 @@
 import path from 'node:path';
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import 'dotenv/config';
 import { fileConsole } from './logger.js';
@@ -121,3 +122,5 @@ export function sessionExists(): boolean {
 }
 
 export const OPENAI_API_KEY = process.env.OPENAI_API_KEY ?? '';
+export const OPENCODE_SESSION_HEADER = "x-opencode-session";
+export const OPENCODE_SESSION_ID = crypto.randomUUID();

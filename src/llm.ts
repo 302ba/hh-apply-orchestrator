@@ -1,6 +1,11 @@
 import OpenAI from 'openai';
 import Anthropic from '@anthropic-ai/sdk';
-import { getAutomationConfig, getLlmConfig } from './config.js';
+import {
+  getAutomationConfig,
+  getLlmConfig,
+  OPENCODE_SESSION_HEADER,
+  OPENCODE_SESSION_ID,
+} from './config.js';
 import { loadProfile, profileToPromptString } from './config-loader.js';
 import { fileConsole } from './logger.js';
 
@@ -12,27 +17,33 @@ export function buildProfilePrompt(): string {
 
 function buildClient() {
   const { provider, apiKey, baseURL } = getLlmConfig();
-  const opts: ConstructorParameters<typeof OpenAI>[0] = { apiKey };
-  if (baseURL) opts.baseURL = baseURL;
-
-  const client = new OpenAI(opts);
+  const defaultHeaders: Record<string, string> = {};
+  if (provider === 'opencode-go' || provider === 'opencode-zen') {
+    defaultHeaders[OPENCODE_SESSION_HEADER] = OPENCODE_SESSION_ID;
+  }
 
   // OpenRouter wants attribution headers to rank your app; harmless if ignored.
   if (provider === 'openrouter') {
-    (client as unknown as { defaultHeaders: Record<string, string> }).defaultHeaders = {
-      ...(client as unknown as { defaultHeaders?: Record<string, string> }).defaultHeaders,
-      'HTTP-Referer': process.env.OPENROUTER_REFERER ?? 'https://localhost',
-      'X-OpenRouter-Title': process.env.OPENROUTER_TITLE ?? 'hh-auto-apply',
-    };
+    defaultHeaders['HTTP-Referer'] = process.env.OPENROUTER_REFERER ?? 'https://localhost';
+    defaultHeaders['X-OpenRouter-Title'] = process.env.OPENROUTER_TITLE ?? 'hh-auto-apply';
   }
+
+  const opts: ConstructorParameters<typeof OpenAI>[0] = { apiKey };
+  if (baseURL) opts.baseURL = baseURL;
+  if (Object.keys(defaultHeaders).length > 0) opts.defaultHeaders = defaultHeaders;
+
+  const client = new OpenAI(opts);
   return client;
 }
 
 function buildAnthropicClient() {
-  const { apiKey, baseURL } = getLlmConfig();
+  const { apiKey, baseURL, provider } = getLlmConfig();
   return new Anthropic({
     apiKey,
     baseURL: baseURL.replace(/\/v1\/?$/, ''),
+    defaultHeaders: provider === 'opencode-go' || provider === 'opencode-zen'
+      ? { [OPENCODE_SESSION_HEADER]: OPENCODE_SESSION_ID }
+      : undefined,
   });
 }
 
