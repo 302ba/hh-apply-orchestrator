@@ -81,30 +81,35 @@ export function loadSearchQueries(): string[] {
 }
 
 export function parseCsvList(raw: string): string[] {
+  const lines = raw.split(/\r?\n/);
   const values: string[] = [];
-  let value = '';
-  let quoted = false;
 
-  for (let i = 0; i < raw.length; i++) {
-    const char = raw[i];
-    if (char === '"') {
-      if (quoted && raw[i + 1] === '"') {
-        value += '"';
-        i++;
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) continue;
+
+    let value = '';
+    let quoted = false;
+
+    for (let i = 0; i < trimmed.length; i++) {
+      const char = trimmed[i];
+      if (char === '"') {
+        if (quoted && trimmed[i + 1] === '"') {
+          value += '"';
+          i++;
+        } else {
+          quoted = !quoted;
+        }
+      } else if (!quoted && char === ',') {
+        if (value.trim()) values.push(value.trim());
+        value = '';
       } else {
-        quoted = !quoted;
+        value += char;
       }
-    } else if (!quoted && (char === ',' || char === '\n' || char === '\r')) {
-      const trimmed = value.trim();
-      if (trimmed) values.push(trimmed);
-      value = '';
-    } else {
-      value += char;
     }
+    if (value.trim()) values.push(value.trim());
   }
 
-  const trimmed = value.trim();
-  if (trimmed) values.push(trimmed);
   return values;
 }
 
