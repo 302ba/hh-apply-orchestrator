@@ -28,12 +28,15 @@ export interface LlmConfig {
   model: string;
 }
 
+export type ApplyMode = 'auto' | 'semi';
+
 export interface AutomationConfig {
   maxPages: number;
   delayBetweenAppliesSeconds: number;
   readRetries: number;
   llmRetries: number;
   llmMaxTokens: number;
+  mode: ApplyMode;
 }
 
 const PROVIDER_PRESETS: Record<LlmProvider, { baseURL: string; defaultModel: string; envKey: string }> = {
@@ -101,7 +104,15 @@ export function getAutomationConfig(): AutomationConfig {
     readRetries: readNumber('HH_READ_RETRIES', 2, 1),
     llmRetries: readNumber('LLM_RETRIES', 2, 1),
     llmMaxTokens: readNumber('LLM_MAX_TOKENS', 1_024, 1),
+    mode: readApplyMode(),
   };
+}
+
+function readApplyMode(): ApplyMode {
+  const raw = (process.env.SEMI_AUTO ?? '').toLowerCase();
+  if (raw === 'true' || raw === '1' || raw === 'yes') return 'semi';
+  const cliFlag = process.argv.includes('--semi');
+  return cliFlag ? 'semi' : 'auto';
 }
 
 export const SESSION_DIR = process.env.SESSION_FILES_DIR

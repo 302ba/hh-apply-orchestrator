@@ -10,6 +10,7 @@ import {
   hasApplicationQuestionnaire,
   normalizeVacancyUrl,
 } from '../src/auto-apply.ts';
+import { getAutomationConfig } from '../src/config.ts';
 import { parseCsvList } from '../src/config-loader.ts';
 import { findExcludedTerm } from '../src/exclusions.ts';
 import { saveCoverLetter } from '../src/letters.ts';
@@ -147,4 +148,16 @@ test('removes unavailable website placeholders from generated letter', () => {
     cleanCoverLetter('Опыт и кейсы: [ссылка на сайт]\nПортфолио: [YOUR_WEBSITE]'),
     'Опыт и кейсы: \nПортфолио:',
   );
+});
+
+test('parses SEMI_AUTO from env', () => {
+  const original = process.env.SEMI_AUTO;
+  process.env.SEMI_AUTO = 'true';
+  try {
+    const config = getAutomationConfig();
+    assert.equal(config.mode, 'semi');
+  } finally {
+    if (original === undefined) delete process.env.SEMI_AUTO;
+    else process.env.SEMI_AUTO = original;
+  }
 });

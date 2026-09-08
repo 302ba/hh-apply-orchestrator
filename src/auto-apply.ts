@@ -1,6 +1,8 @@
 import { chromium, type Page } from 'playwright';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createInterface } from 'node:readline/promises';
+import { stdin as input, stdout as output } from 'node:process';
 import {
   SESSION_FILE,
   getAutomationConfig,
@@ -211,18 +213,17 @@ async function getHandledApplicationStatus(page: Page): Promise<string | undefin
   return findHandledApplicationStatus(bodyText);
 }
 
+const CONFIRMATION_PATTERNS = [
+  'Вы откликнулись',
+  'Резюме доставлено',
+  'Отклик отправлен',
+  'Ваш отклик отправлен',
+  'Отклик отправлен работодателю',
+];
+
 async function responseConfirmed(page: Page): Promise<boolean> {
-  const confirmation = page
-    .locator(
-      "text=Вы откликнулись, text=Резюме доставлено, text=Отклик отправлен, text=Ваш отклик отправлен, text=Отклик отправлен работодателю",
-    )
-    .first();
-  try {
-    await confirmation.waitFor({ state: 'visible', timeout: 5_000 });
-    return true;
-  } catch {
-    return false;
-  }
+  const bodyText = await page.locator('body').innerText().catch(() => '');
+  return CONFIRMATION_PATTERNS.some((p) => bodyText.includes(p));
 }
 
 async function applicationFailureReason(page: Page): Promise<string> {
@@ -261,7 +262,18 @@ async function resultAfterSubmit(page: Page, successReason: string): Promise<App
   return applicationFailureResult(page);
 }
 
-async function applyToVacancy(page: Page, url: string, message: string): Promise<ApplyResult> {
+async function waitForManualSubmission(page: Page): Promise<ApplyResult> {
+  const rl = createInterface({ input, output });
+  console.log('\n      ✋ Режим: отправь отклик вручную (включи вопросы, ответь, нажми Отправить).');
+  console.log('      ⏳ После отправки вернись сюда и нажми Enter...');
+  await rl.question('      ▶ ');
+  rl.close();
+  await page.waitForTimeout(1_000);
+  if (await responseConfirmed(page)) return { status: 'success', reason: 'Отправлено вручную' };
+  return applicationFailureResult(page);
+}
+
+async function applyToVacancy(page: Page, url: string, message: string, semiAuto: boolean): Promise<ApplyResult> {
   try {
     await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 20_000 });
     await page.waitForTimeout(3_000);
@@ -341,6 +353,19 @@ async function applyToVacancy(page: Page, url: string, message: string): Promise
 
     // Способ 3: просто жмём "Откликнуться", затем добавляем письмо
     if ((await applyBtn.count()) > 0) {
+      if (semiAuto) {
+        console.log("      🔍 Жму основную кнопку 'Откликнуться'");
+        await applyBtn.click();
+        await page.waitForTimeout(3_000);
+
+        const letterArea = page.locator('textarea').first();
+        if ((await letterArea.count()) > 0 && message) {
+          console.log('      ✍️  Заполняю письмо...');
+          await letterArea.fill(message);
+          await page.waitForTimeout(500);
+        }
+        return waitForManualSubmission(page);
+      }
       console.log("      🔍 Жму основную кнопку 'Откликнуться'");
       await applyBtn.click();
       await page.waitForTimeout(3_000);
@@ -399,12 +424,14 @@ async function main(): Promise<void> {
 
   const llm = getLlmConfig();
   const automation = getAutomationConfig();
+  const mode = automation.mode === 'semi' ? 'Полуавтоматический (--semi)' : 'Полный автомат';
   console.log(`\n📋 Поисковые запросы: ${searchQueries.join(', ')}`);
   console.log(`📄 Страниц на запрос: ${automation.maxPages}`);
   console.log(`⏱️  Пауза между откликами: ${automation.delayBetweenAppliesSeconds} сек`);
   console.log(`🔁 Повторы чтения/LLM: ${automation.readRetries}/${automation.llmRetries}`);
   console.log(`🤖 LLM: ${llm.provider} / ${llm.model}`);
   console.log(`🚫 Исключения: ${excludedTerms.length}`);
+  console.log(`⚙️  Режим: ${mode}`);
 
   const stats = { success: 0, skipped: 0, error: 0 };
   const seenVacancies = new Set<string>();
@@ -485,7 +512,7 @@ async function main(): Promise<void> {
           }
 
           console.log('      📤 Отправляю отклик...');
-          const result = await applyToVacancy(page, vacancy.url, letter);
+          const result = await applyToVacancy(page, vacancy.url, letter, automation.mode === 'semi');
 
           if (result.status === 'success') {
             console.log(`      ✅ Успех! (${result.reason})`);
