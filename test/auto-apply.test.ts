@@ -161,3 +161,15 @@ test('parses SEMI_AUTO from env', () => {
     else process.env.SEMI_AUTO = original;
   }
 });
+
+test('parses DRY_RUN from env', () => {
+  const original = process.env.DRY_RUN;
+  process.env.DRY_RUN = 'true';
+  try {
+    const config = getAutomationConfig();
+    assert.equal(config.dryRun, true);
+  } finally {
+    if (original === undefined) delete process.env.DRY_RUN;
+    else process.env.DRY_RUN = original;
+  }
+});

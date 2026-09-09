@@ -432,6 +432,7 @@ async function main(): Promise<void> {
   console.log(`🤖 LLM: ${llm.provider} / ${llm.model}`);
   console.log(`🚫 Исключения: ${excludedTerms.length}`);
   console.log(`⚙️  Режим: ${mode}`);
+  if (automation.dryRun) console.log('🧪 Dry-run: письма и отклики не отправляются');
 
   const stats = { success: 0, skipped: 0, error: 0 };
   const seenVacancies = new Set<string>();
@@ -491,23 +492,36 @@ async function main(): Promise<void> {
           console.log(`      📍 Локация: ${location.reason}`);
 
           console.log('      💬 Генерирую письмо...');
-          const letterResult = await generateCoverLetter(vacancy.title, vacancy.employer, details.description);
-          const letter = letterResult.text;
+          let letter = '';
+          if (automation.dryRun) {
+            console.log('      🧪 Dry-run: письмо не сгенерировано и не отправлено');
+          } else {
+            const letterResult = await generateCoverLetter(vacancy.title, vacancy.employer, details.description);
+            letter = letterResult.text;
 
-          if (letter) console.log(`      📝 Письмо: ${letter.slice(0, 80)}...`);
-          if (!letter) {
-            console.log(`      ⏭️  Пропущено: ${letterResult.reason ?? 'письмо не сгенерировано'}`);
-            stats.skipped++;
-            continue;
+            if (letter) console.log(`      📝 Письмо: ${letter.slice(0, 80)}...`);
+            if (!letter) {
+              console.log(`      ⏭️  Пропущено: ${letterResult.reason ?? 'письмо не сгенерировано'}`);
+              stats.skipped++;
+              continue;
+            }
+
+            try {
+              const letterPath = saveCoverLetter(vacancy, letter);
+              console.log(`      💾 Письмо сохранено: ${letterPath}`);
+            } catch (err) {
+              const reason = err instanceof Error ? err.message : String(err);
+              console.log(`      ❌ Ошибка сохранения письма: ${reason}`);
+              stats.error++;
+              continue;
+            }
           }
 
-          try {
-            const letterPath = saveCoverLetter(vacancy, letter);
-            console.log(`      💾 Письмо сохранено: ${letterPath}`);
-          } catch (err) {
-            const reason = err instanceof Error ? err.message : String(err);
-            console.log(`      ❌ Ошибка сохранения письма: ${reason}`);
-            stats.error++;
+          if (automation.dryRun) {
+            console.log('      🧪 Dry-run: отклик не отправлен');
+            stats.skipped++;
+            console.log(`      ⏳ Пауза ${automation.delayBetweenAppliesSeconds} сек...`);
+            await new Promise((r) => setTimeout(r, automation.delayBetweenAppliesSeconds * 1000));
             continue;
           }
 

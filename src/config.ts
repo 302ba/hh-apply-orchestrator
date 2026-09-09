@@ -37,6 +37,7 @@ export interface AutomationConfig {
   llmRetries: number;
   llmMaxTokens: number;
   mode: ApplyMode;
+  dryRun: boolean;
 }
 
 const PROVIDER_PRESETS: Record<LlmProvider, { baseURL: string; defaultModel: string; envKey: string }> = {
@@ -105,7 +106,14 @@ export function getAutomationConfig(): AutomationConfig {
     llmRetries: readNumber('LLM_RETRIES', 2, 1),
     llmMaxTokens: readNumber('LLM_MAX_TOKENS', 1_024, 1),
     mode: readApplyMode(),
+    dryRun: readDryRun(),
   };
+}
+
+function readDryRun(): boolean {
+  const raw = (process.env.DRY_RUN ?? '').toLowerCase();
+  if (raw === 'true' || raw === '1' || raw === 'yes') return true;
+  return process.argv.includes('--dry');
 }
 
 function readApplyMode(): ApplyMode {

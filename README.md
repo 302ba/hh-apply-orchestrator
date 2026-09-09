@@ -80,6 +80,14 @@ npm run apply -- --semi
 SEMI_AUTO=true npm run apply
 ```
 
+Для предварительного просмотра без отправки писем и откликов:
+
+```bash
+npm run apply -- --dry
+# или
+DRY_RUN=true npm run apply
+```
+
 ## Проверка
 
 ```bash
