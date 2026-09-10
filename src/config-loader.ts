@@ -25,6 +25,8 @@ export interface ProfileDoc {
 export const CONFIG_DIR = path.resolve(process.cwd(), 'config');
 export const PROFILE_FILE = path.join(CONFIG_DIR, 'profile.md');
 export const PROFILE_EXAMPLE = path.join(CONFIG_DIR, 'profile.md.example');
+export const RESUME_FILE = path.join(CONFIG_DIR, 'resume.md');
+export const RESUME_EXAMPLE = path.join(CONFIG_DIR, 'resume.md.example');
 export const QUERIES_FILE = path.join(CONFIG_DIR, 'queries.txt');
 export const QUERIES_EXAMPLE = path.join(CONFIG_DIR, 'queries.txt.example');
 export const EXCLUDED_FILE = path.join(CONFIG_DIR, 'excluded.csv');
@@ -64,6 +66,19 @@ export function loadProfile(): ProfileDoc {
     cases: Array.isArray(d.cases) ? d.cases : [],
     body: content.trim(),
   };
+}
+
+export function loadResume(): string {
+  if (fs.existsSync(RESUME_FILE)) {
+    return fs.readFileSync(RESUME_FILE, 'utf-8').trim();
+  }
+  if (fs.existsSync(RESUME_EXAMPLE)) {
+    console.log(`\n📄 Первый запуск: копирую ${path.basename(RESUME_EXAMPLE)} → ${path.basename(RESUME_FILE)}`);
+    fs.copyFileSync(RESUME_EXAMPLE, RESUME_FILE);
+    console.log(`   Заполни ${RESUME_FILE} и запусти снова.`);
+    process.exit(0);
+  }
+  return '';
 }
 
 function stringList(value: unknown): string[] {

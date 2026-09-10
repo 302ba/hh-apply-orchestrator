@@ -10,8 +10,8 @@ import {
   hasApplicationQuestionnaire,
   normalizeVacancyUrl,
 } from '../src/auto-apply.ts';
-import { getAutomationConfig, getLlmConfig } from '../src/config.ts';
-import { parseCsvList } from '../src/config-loader.ts';
+import { getAutomationConfig, getLlmConfig, getLlmSampling } from '../src/config.ts';
+import { parseCsvList, loadResume } from '../src/config-loader.ts';
 import { findExcludedTerm } from '../src/exclusions.ts';
 import { saveCoverLetter } from '../src/letters.ts';
 import { cleanCoverLetter } from '../src/llm.ts';
@@ -217,4 +217,33 @@ test('loads llamacpp preset with localhost default URL', () => {
     if (originalProvider === undefined) delete process.env.LLM_PROVIDER;
     else process.env.LLM_PROVIDER = originalProvider;
   }
+});
+
+test('uses LLM sampling defaults that match recommended local settings', () => {
+  for (const key of [
+    'LLM_CONTEXT_LENGTH',
+    'LLM_TEMPERATURE',
+    'LLM_TOP_P',
+    'LLM_TOP_K',
+    'LLM_MIN_P',
+    'LLM_REPEAT_PENALTY',
+    'LLM_FLASH_ATTENTION',
+    'LLM_KEEP_MODEL_LOADED',
+  ]) delete process.env[key];
+
+  const sampling = getLlmSampling();
+  assert.equal(sampling.contextLength, 16_384);
+  assert.equal(sampling.temperature, 0.7);
+  assert.equal(sampling.topP, 0.8);
+  assert.equal(sampling.topK, 20);
+  assert.equal(sampling.minP, 0);
+  assert.equal(sampling.repeatPenalty, 1.08);
+  assert.equal(sampling.flashAttention, true);
+  assert.equal(sampling.keepModelLoaded, true);
+});
+
+test('loads resume from config/resume.md', () => {
+  const expected = loadResume();
+  assert.match(expected, /разработчик/i);
+  assert.ok(expected.length > 20);
 });

@@ -3,10 +3,11 @@ import Anthropic from '@anthropic-ai/sdk';
 import {
   getAutomationConfig,
   getLlmConfig,
+  getLlmSampling,
   OPENCODE_SESSION_HEADER,
   OPENCODE_SESSION_ID,
 } from './config.js';
-import { loadProfile, profileToPromptString } from './config-loader.js';
+import { loadProfile, loadResume, profileToPromptString } from './config-loader.js';
 import { fileConsole } from './logger.js';
 
 const console = fileConsole;
@@ -14,6 +15,24 @@ const console = fileConsole;
 export function buildProfilePrompt(): string {
   return profileToPromptString(loadProfile());
 }
+
+const RESUME_MODE_PROMPT = `/no_think
+
+Напиши сопроводительное письмо для этой вакансии.
+
+Я хочу получить короткое, естественное и персонализированное письмо, которое не выглядит сгенерированным ИИ.
+
+Не выдумывай никакие факты.
+
+### МОЁ РЕЗЮМЕ
+
+[ВСТАВЬ CV]
+
+### ВАКАНСИЯ
+
+[ВСТАВЬ ТЕКСТ ВАКАНСИИ]
+
+Выдай только готовое сопроводительное письмо без анализа.`;
 
 function buildClient() {
   const { provider, apiKey, baseURL } = getLlmConfig();
@@ -140,8 +159,17 @@ export async function generateCoverLetter(
   description: string,
 ): Promise<CoverLetterResult> {
   const { model, provider } = getLlmConfig();
-  const profile = buildProfilePrompt();
-  const prompt = `${COVER_LETTER_SYSTEM_PROMPT}
+  const useResume = (process.env.RESUME_MODE ?? '').toLowerCase() === 'true'
+    || process.argv.includes('--resume');
+  const resume = useResume ? loadResume() : '';
+
+  const profile = useResume && resume ? '' : buildProfilePrompt();
+
+  const prompt = useResume && resume
+    ? RESUME_MODE_PROMPT
+        .replace('[ВСТАВЬ CV]', resume)
+        .replace('[ВСТАВЬ ТЕКСТ ВАКАНСИИ]', description.slice(0, 2500))
+    : `${COVER_LETTER_SYSTEM_PROMPT}
 
 ОБО МНЕ:
 ${profile}
@@ -154,6 +182,7 @@ ${profile}
 Напиши только текст письма, без комментариев.`;
 
   const { llmRetries, llmMaxTokens } = getAutomationConfig();
+  const sampling = getLlmSampling();
   for (let attempt = 1; attempt <= llmRetries; attempt++) {
     try {
       if (usesMessagesEndpoint(provider, model)) {
@@ -162,7 +191,9 @@ ${profile}
           // Cover letters need direct text, not a reasoning trace.
           thinking: { type: 'disabled' },
           max_tokens: llmMaxTokens,
-          temperature: 0.8,
+          temperature: sampling.temperature,
+          top_p: sampling.topP,
+          top_k: sampling.topK,
           messages: [{ role: 'user', content: prompt }],
         });
         const text = cleanCoverLetter(response.content
@@ -186,7 +217,10 @@ ${profile}
         model,
         messages: [{ role: 'user', content: prompt }],
         max_tokens: llmMaxTokens,
-        temperature: 0.8,
+        temperature: sampling.temperature,
+        top_p: sampling.topP,
+        frequency_penalty: Math.max(0, sampling.repeatPenalty - 1),
+        presence_penalty: 0,
       });
       const text = cleanCoverLetter(response.choices[0]?.message?.content ?? '');
       if (text) return { text };

@@ -97,6 +97,17 @@ function resolveProvider(): LlmProvider {
   return 'openai';
 }
 
+export interface LlmSampling {
+  contextLength: number;
+  temperature: number;
+  topP: number;
+  topK: number;
+  minP: number;
+  repeatPenalty: number;
+  flashAttention: boolean;
+  keepModelLoaded: boolean;
+}
+
 export function getLlmConfig(): LlmConfig {
   const provider = resolveProvider();
   const preset = PROVIDER_PRESETS[provider];
@@ -123,6 +134,39 @@ function readNumber(name: string, fallback: number, minimum: number): number {
 
   console.log(`⚠️  Invalid ${name}="${raw}", using ${fallback}`);
   return fallback;
+}
+
+function readFloat(name: string, fallback: number, minimum: number, maximum: number): number {
+  const raw = process.env[name];
+  if (raw === undefined || raw.trim() === '') return fallback;
+
+  const value = Number(raw);
+  if (Number.isFinite(value) && value >= minimum && value <= maximum) return value;
+
+  console.log(`⚠️  Invalid ${name}="${raw}", using ${fallback}`);
+  return fallback;
+}
+
+function readBoolean(name: string, fallback: boolean): boolean {
+  const raw = (process.env[name] ?? '').toLowerCase();
+  if (raw === '') return fallback;
+  if (['true', '1', 'yes', 'on'].includes(raw)) return true;
+  if (['false', '0', 'no', 'off'].includes(raw)) return false;
+  console.log(`⚠️  Invalid ${name}="${raw}", using ${fallback}`);
+  return fallback;
+}
+
+export function getLlmSampling(): LlmSampling {
+  return {
+    contextLength: readNumber('LLM_CONTEXT_LENGTH', 16_384, 256),
+    temperature: readFloat('LLM_TEMPERATURE', 0.7, 0, 2),
+    topP: readFloat('LLM_TOP_P', 0.8, 0, 1),
+    topK: readNumber('LLM_TOP_K', 20, 0),
+    minP: readFloat('LLM_MIN_P', 0, 0, 1),
+    repeatPenalty: readFloat('LLM_REPEAT_PENALTY', 1.08, 0, 2),
+    flashAttention: readBoolean('LLM_FLASH_ATTENTION', true),
+    keepModelLoaded: readBoolean('LLM_KEEP_MODEL_LOADED', true),
+  };
 }
 
 export function getAutomationConfig(): AutomationConfig {
