@@ -246,3 +246,103 @@ ${profile}
 
   return { text: '', reason: 'Генерация письма не выполнена' };
 }
+
+export interface QuestionnaireAnswerInput {
+  questions: Array<{
+    name: string;
+    type: string;
+    label: string;
+    options?: string[];
+    required: boolean;
+  }>;
+  resume: string;
+}
+
+const QUESTIONNAIRE_SYSTEM_PROMPT = `Ты отвечаешь на вопросы работодателя от имени кандидата на отклик.
+
+ПРАВИЛА:
+
+* Отвечай ТОЛЬКО на основе резюме кандидата. Не выдумывай факты.
+* Если в резюме нет ответа — оставь поле пустым (null).
+* Для radio/select выбирай ТОЛЬКО из предложенных вариантов, иначе null.
+* Для textarea/text — пиши естественно и коротко (1-2 предложения), как живой человек.
+* Не повторяй название вакансии или компании.
+* Если вопрос звучит как требование, на которое кандидат не отвечает — оставляй null.
+
+ФОРМАТ ОТВЕТА (строго JSON, без пояснений):
+
+{
+  "answers": {
+    "имя_поля": "значение или null",
+    ...
+  }
+}`;
+
+export async function answerQuestionnaire(
+  input: QuestionnaireAnswerInput,
+): Promise<Record<string, string | null> | undefined> {
+  const { model, provider } = getLlmConfig();
+  const userPrompt = `### РЕЗЮМЕ КАНДИДАТА
+
+${input.resume}
+
+### ВОПРОСЫ РАБОТОДАТЕЛЯ
+
+${input.questions
+  .map((q, i) => {
+    const options = q.options?.length ? `\nВарианты: ${q.options.join(' | ')}` : '';
+    const required = q.required ? ' (обязательный)' : '';
+    return `${i + 1}. [${q.type}${required}] ${q.label}\n   поле: ${q.name}${options}`;
+  })
+  .join('\n\n')}
+
+Дай ответ в формате JSON. Если на вопрос нельзя ответить из резюме — поставь null.`;
+
+  const { temperature, topP, repeatPenalty } = getLlmSampling();
+  const { llmMaxTokens } = getAutomationConfig();
+
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      let content: string | undefined;
+      if (usesMessagesEndpoint(provider, model)) {
+        const response = await buildAnthropicClient().messages.create({
+          model,
+          thinking: { type: 'disabled' },
+          max_tokens: llmMaxTokens,
+          temperature,
+          top_p: topP,
+          top_k: 20,
+          messages: [{ role: 'user', content: `${QUESTIONNAIRE_SYSTEM_PROMPT}\n\n${userPrompt}` }],
+        });
+        content = response.content
+          .filter((b): b is Anthropic.TextBlock => b.type === 'text')
+          .map((b) => b.text)
+          .join('')
+          .trim();
+      } else {
+        const response = await buildClient().chat.completions.create({
+          model,
+          messages: [
+            { role: 'system', content: QUESTIONNAIRE_SYSTEM_PROMPT },
+            { role: 'user', content: userPrompt },
+          ],
+          max_tokens: llmMaxTokens,
+          temperature,
+          top_p: topP,
+          frequency_penalty: Math.max(0, repeatPenalty - 1),
+          presence_penalty: 0,
+        });
+        content = response.choices[0]?.message?.content?.trim();
+      }
+
+      if (!content) continue;
+      const jsonMatch = content.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) continue;
+      const parsed = JSON.parse(jsonMatch[0]) as { answers?: Record<string, string | null> };
+      if (parsed.answers) return parsed.answers;
+    } catch {
+      // retry
+    }
+  }
+  return undefined;
+}

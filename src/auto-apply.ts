@@ -14,13 +14,15 @@ import {
 import {
   QUERIES_FILE,
   loadExcludedText,
-  PROFILE_FILE,
   loadProfile,
+  loadResume,
   loadSearchQueries,
   profileHasPlaceholders,
+  PROFILE_FILE,
   type ProfileDoc,
 } from './config-loader.js';
-import { generateCoverLetter } from './llm.js';
+import { generateCoverLetter, answerQuestionnaire, buildProfilePrompt } from './llm.js';
+import { extractQuestionnaire, fillQuestionnaire, isQuestionnairePage, type Questionnaire } from './questionnaire.js';
 import { findExcludedTerm } from './exclusions.js';
 import { checkLocationEligibility, parseVacancyLocation, type VacancyLocation } from './vacancy-location.js';
 import { fileConsole } from './logger.js';
@@ -260,7 +262,91 @@ async function applicationFailureResult(page: Page): Promise<ApplyResult> {
 
 async function resultAfterSubmit(page: Page, successReason: string): Promise<ApplyResult> {
   if (await responseConfirmed(page)) return { status: 'success', reason: successReason };
+
+  // HH may navigate to a questionnaire page after the main submit. Detect and answer it.
+  const handled = await handleQuestionnaireIfPresent(page);
+  if (handled) return handled;
+
   return applicationFailureResult(page);
+}
+
+async function fillCoverLetter(
+  page: Page,
+  message: string,
+): Promise<boolean> {
+  // The textarea is only present after clicking "Добавить" near "Сопроводительное письмо".
+  const addBtn = page
+    .locator("button:has-text('Добавить'), a:has-text('Добавить')")
+    .filter({ has: page.locator("xpath=ancestor::*[contains(., 'сопроводительное письмо') or contains(., 'Сопроводительное письмо')]") })
+    .first();
+  if ((await addBtn.count()) > 0) {
+    await addBtn.click();
+    await page.waitForTimeout(1_000);
+  }
+
+  const letterArea = page
+    .locator("textarea[data-qa='vacancy-response-popup-form-letter-input']")
+    .first();
+  if ((await letterArea.count()) === 0) return false;
+  await letterArea.fill(message);
+  await page.waitForTimeout(500);
+  return true;
+}
+
+async function handleQuestionnaireIfPresent(page: Page): Promise<ApplyResult | undefined> {
+  const bodyText = await page.locator('body').innerText().catch(() => '');
+  if (!isQuestionnairePage(bodyText)) return undefined;
+
+  const form = await extractQuestionnaire(page);
+  if (!form || form.questions.length === 0) {
+    return {
+      status: 'skipped',
+      reason: 'HH показал страницу с вопросами, но структура формы не распознана',
+    };
+  }
+
+  const resume = loadResume() || buildProfilePrompt();
+  const answers = await answerQuestionnaire({ questions: form.questions, resume });
+  if (!answers) {
+    return {
+      status: 'skipped',
+      reason: 'LLM не вернул ответы на вопросы работодателя',
+    };
+  }
+
+  const filled = answersToValues(answers, form.questions);
+  await fillQuestionnaire(page, form, filled);
+
+  console.log(`      📝 Ответы LLM на ${form.questions.length} вопросов применены, отправляю...`);
+
+  const submit = page.locator(form.submitSelector).first();
+  if ((await submit.count()) === 0) {
+    return { status: 'error', reason: 'Кнопка отправки анкеты не найдена' };
+  }
+  await submit.click();
+  await page.waitForTimeout(3_000);
+
+  if (await responseConfirmed(page)) {
+    return { status: 'success', reason: 'Отправлено с ответами на вопросы' };
+  }
+  return applicationFailureResult(page);
+}
+
+function answersToValues(
+  answers: Record<string, string | null>,
+  questions: ReadonlyArray<Questionnaire['questions'][number]>,
+): Record<string, string | string[] | undefined> {
+  const result: Record<string, string | string[] | undefined> = {};
+  for (const q of questions) {
+    const value = answers[q.name];
+    if (value === null || value === undefined) continue;
+    if (q.type === 'checkbox') {
+      result[q.name] = value.split(',').map((s) => s.trim()).filter(Boolean);
+    } else {
+      result[q.name] = value;
+    }
+  }
+  return result;
 }
 
 async function waitForManualSubmission(page: Page): Promise<ApplyResult> {
@@ -289,22 +375,17 @@ async function applyToVacancy(page: Page, url: string, message: string, semiAuto
       await coverLink.click();
       await page.waitForTimeout(2_000);
 
-      const letterArea = page.locator('textarea').first();
-      if ((await letterArea.count()) > 0) {
-        console.log('      ✍️  Заполняю письмо...');
-        await letterArea.fill(message);
-        await page.waitForTimeout(500);
+      await fillCoverLetter(page, message);
 
-        const submitBtn = page
-          .locator(
-            "button:has-text('Откликнуться'), button:has-text('Отправить'), button[data-qa='vacancy-response-submit-popup']",
-          )
-          .first();
-        if ((await submitBtn.count()) > 0) {
-          await submitBtn.click();
-          await page.waitForTimeout(3_000);
-          return resultAfterSubmit(page, 'С письмом');
-        }
+      const submitBtn = page
+        .locator(
+          "button:has-text('Откликнуться'), button:has-text('Отправить'), button[data-qa='vacancy-response-submit-popup']",
+        )
+        .first();
+      if ((await submitBtn.count()) > 0) {
+        await submitBtn.click();
+        await page.waitForTimeout(3_000);
+        return resultAfterSubmit(page, 'С письмом');
       }
     }
 
@@ -333,20 +414,19 @@ async function applyToVacancy(page: Page, url: string, message: string, semiAuto
           await withLetter.click();
           await page.waitForTimeout(2_000);
 
-          const letterArea = page.locator('textarea').first();
-          if ((await letterArea.count()) > 0) {
+          if (await fillCoverLetter(page, message)) {
             console.log('      ✍️  Заполняю письмо...');
-            await letterArea.fill(message);
-            await page.waitForTimeout(500);
+          } else {
+            console.log('      ⚠️  Поле письма не найдено');
+          }
 
-            const submitBtn = page
-              .locator("button:has-text('Откликнуться'), button:has-text('Отправить')")
-              .first();
-            if ((await submitBtn.count()) > 0) {
-              await submitBtn.click();
-              await page.waitForTimeout(3_000);
-              return resultAfterSubmit(page, 'С письмом (меню)');
-            }
+          const submitBtn = page
+            .locator("button:has-text('Откликнуться'), button:has-text('Отправить')")
+            .first();
+          if ((await submitBtn.count()) > 0) {
+            await submitBtn.click();
+            await page.waitForTimeout(3_000);
+            return resultAfterSubmit(page, 'С письмом (меню)');
           }
         }
       }
@@ -359,24 +439,17 @@ async function applyToVacancy(page: Page, url: string, message: string, semiAuto
         await applyBtn.click();
         await page.waitForTimeout(3_000);
 
-        const letterArea = page.locator('textarea').first();
-        if ((await letterArea.count()) > 0 && message) {
-          console.log('      ✍️  Заполняю письмо...');
-          await letterArea.fill(message);
-          await page.waitForTimeout(500);
-        }
+        if (message) await fillCoverLetter(page, message);
         return waitForManualSubmission(page);
       }
       console.log("      🔍 Жму основную кнопку 'Откликнуться'");
       await applyBtn.click();
       await page.waitForTimeout(3_000);
 
-      const letterArea = page.locator('textarea').first();
-      if ((await letterArea.count()) > 0 && message) {
-        console.log('      ✍️  Появилось поле для письма, заполняю...');
-        await letterArea.fill(message);
-        await page.waitForTimeout(1_000);
+      let letterFilled = false;
+      if (message) letterFilled = await fillCoverLetter(page, message);
 
+      if (letterFilled) {
         const submitBtn = page
           .locator(
             "button:has-text('Отправить'), button:has-text('Откликнуться'), button:has-text('Отправить письмо'), button[type='submit']",
