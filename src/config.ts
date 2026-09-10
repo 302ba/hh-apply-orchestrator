@@ -19,7 +19,7 @@ export interface ApplyResult {
   reason: string;
 }
 
-export type LlmProvider = 'openai' | 'openrouter' | 'opencode-go' | 'opencode-zen';
+export type LlmProvider = 'openai' | 'openrouter' | 'opencode-go' | 'opencode-zen' | 'lmstudio' | 'ollama' | 'llamacpp';
 
 export interface LlmConfig {
   provider: LlmProvider;
@@ -40,26 +40,48 @@ export interface AutomationConfig {
   dryRun: boolean;
 }
 
-const PROVIDER_PRESETS: Record<LlmProvider, { baseURL: string; defaultModel: string; envKey: string }> = {
+const PROVIDER_PRESETS: Record<LlmProvider, { baseURL: string; defaultModel: string; envKey: string; requiresKey: boolean }> = {
   openai: {
     baseURL: 'https://api.openai.com/v1',
     defaultModel: 'gpt-4o-mini',
     envKey: 'OPENAI_API_KEY',
+    requiresKey: true,
   },
   openrouter: {
     baseURL: 'https://openrouter.ai/api/v1',
     defaultModel: 'openai/gpt-4o-mini',
     envKey: 'OPENROUTER_API_KEY',
+    requiresKey: true,
   },
   'opencode-go': {
     baseURL: 'https://opencode.ai/zen/go/v1',
     defaultModel: 'qwen3.8-flash',
     envKey: 'OPENCODE_API_KEY',
+    requiresKey: true,
   },
   'opencode-zen': {
     baseURL: 'https://opencode.ai/zen/v1',
     defaultModel: 'gpt-5.6-luna',
     envKey: 'OPENCODE_API_KEY',
+    requiresKey: true,
+  },
+  lmstudio: {
+    baseURL: 'http://localhost:1234/v1',
+    defaultModel: 'local-model',
+    envKey: 'LMSTUDIO_API_KEY',
+    requiresKey: false,
+  },
+  ollama: {
+    baseURL: 'http://localhost:11434/v1',
+    defaultModel: 'llama3.1',
+    envKey: 'OLLAMA_API_KEY',
+    requiresKey: false,
+  },
+  llamacpp: {
+    baseURL: 'http://localhost:8080/v1',
+    defaultModel: 'local-model',
+    envKey: 'LLAMACPP_API_KEY',
+    requiresKey: false,
   },
 };
 
@@ -68,6 +90,9 @@ function resolveProvider(): LlmProvider {
   if (raw === 'openai' || raw === 'openrouter') return raw;
   if (raw === 'opencode' || raw === 'opencode-go') return 'opencode-go';
   if (raw === 'opencode-zen') return 'opencode-zen';
+  if (raw === 'lmstudio' || raw === 'lm-studio') return 'lmstudio';
+  if (raw === 'ollama') return 'ollama';
+  if (raw === 'llama.cpp' || raw === 'llama-cpp' || raw === 'llamacpp') return 'llamacpp';
   console.log(`⚠️  Unknown LLM_PROVIDER "${raw}", falling back to "openai"`);
   return 'openai';
 }
@@ -76,10 +101,12 @@ export function getLlmConfig(): LlmConfig {
   const provider = resolveProvider();
   const preset = PROVIDER_PRESETS[provider];
 
-  // Provider-specific key wins; OPENAI_API_KEY still works as a fallback for the openai provider.
+  // Provider-specific key wins. For openai/openrouter, OPENAI_API_KEY is a real fallback.
+  // For local providers, a synthetic placeholder is enough unless the env supplies a real one.
   const providerSpecific = process.env[preset.envKey];
-  const fallback = process.env.OPENAI_API_KEY;
-  const apiKey = providerSpecific ?? fallback ?? '';
+  const fallback = provider === 'openai' ? (process.env.OPENAI_API_KEY ?? '') : '';
+  let apiKey = providerSpecific ?? fallback ?? '';
+  if (!apiKey && !preset.requiresKey) apiKey = 'local';
 
   const model = process.env.LLM_MODEL ?? preset.defaultModel;
   const baseURL = process.env.LLM_BASE_URL ?? preset.baseURL;

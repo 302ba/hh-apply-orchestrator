@@ -10,7 +10,7 @@ import {
   hasApplicationQuestionnaire,
   normalizeVacancyUrl,
 } from '../src/auto-apply.ts';
-import { getAutomationConfig } from '../src/config.ts';
+import { getAutomationConfig, getLlmConfig } from '../src/config.ts';
 import { parseCsvList } from '../src/config-loader.ts';
 import { findExcludedTerm } from '../src/exclusions.ts';
 import { saveCoverLetter } from '../src/letters.ts';
@@ -171,5 +171,50 @@ test('parses DRY_RUN from env', () => {
   } finally {
     if (original === undefined) delete process.env.DRY_RUN;
     else process.env.DRY_RUN = original;
+  }
+});
+
+test('loads lmstudio preset with localhost default URL', () => {
+  const originalProvider = process.env.LLM_PROVIDER;
+  const originalKey = process.env.LMSTUDIO_API_KEY;
+  process.env.LLM_PROVIDER = 'lmstudio';
+  delete process.env.LMSTUDIO_API_KEY;
+  try {
+    const config = getLlmConfig();
+    assert.equal(config.provider, 'lmstudio');
+    assert.equal(config.baseURL, 'http://localhost:1234/v1');
+    assert.equal(config.apiKey, 'local');
+  } finally {
+    if (originalProvider === undefined) delete process.env.LLM_PROVIDER;
+    else process.env.LLM_PROVIDER = originalProvider;
+    if (originalKey === undefined) delete process.env.LMSTUDIO_API_KEY;
+    else process.env.LMSTUDIO_API_KEY = originalKey;
+  }
+});
+
+test('loads ollama preset with localhost default URL', () => {
+  const originalProvider = process.env.LLM_PROVIDER;
+  process.env.LLM_PROVIDER = 'ollama';
+  try {
+    const config = getLlmConfig();
+    assert.equal(config.provider, 'ollama');
+    assert.equal(config.baseURL, 'http://localhost:11434/v1');
+    assert.equal(config.apiKey, 'local');
+  } finally {
+    if (originalProvider === undefined) delete process.env.LLM_PROVIDER;
+    else process.env.LLM_PROVIDER = originalProvider;
+  }
+});
+
+test('loads llamacpp preset with localhost default URL', () => {
+  const originalProvider = process.env.LLM_PROVIDER;
+  process.env.LLM_PROVIDER = 'llamacpp';
+  try {
+    const config = getLlmConfig();
+    assert.equal(config.provider, 'llamacpp');
+    assert.equal(config.baseURL, 'http://localhost:8080/v1');
+  } finally {
+    if (originalProvider === undefined) delete process.env.LLM_PROVIDER;
+    else process.env.LLM_PROVIDER = originalProvider;
   }
 });

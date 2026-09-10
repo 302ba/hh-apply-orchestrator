@@ -39,6 +39,19 @@ OPENCODE_API_KEY=your-api-key
 - `opencode-go` — OpenCode Go API
 - `opencode-zen` — OpenCode Zen API
 - `opencode` — alias для `opencode-go`
+- `lmstudio` — LM Studio local server (`http://localhost:1234/v1`)
+- `ollama` — Ollama local server (`http://localhost:11434/v1`)
+- `llamacpp` — llama.cpp server (`http://localhost:8080/v1`)
+
+Для локальных провайдеров укажи `LLM_MODEL=<имя модели на сервере>`, например:
+
+```env
+LLM_PROVIDER=ollama
+LLM_MODEL=llama3.1
+# LLM_BASE_URL=http://localhost:11434/v1
+```
+
+API-ключ для локальных провайдеров обычно не требуется; задай `LMSTUDIO_API_KEY`, `OLLAMA_API_KEY` или `LLAMACPP_API_KEY`, только если твой сервер требует аутентификации.
 
 Заполни конфигурационные файлы:
 

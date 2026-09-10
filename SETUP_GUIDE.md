@@ -46,12 +46,13 @@ cp .env.example .env
 
 Заполни `.env`:
 
-- `LLM_PROVIDER=openai`, `openrouter`, `opencode-go` или `opencode-zen`
+- `LLM_PROVIDER=openai`, `openrouter`, `opencode-go`, `opencode-zen`, `lmstudio`, `ollama` или `llamacpp`
 - `opencode` также принимается как alias для `opencode-go`
 - Ключ соответствующего провайдера
 - При необходимости `LLM_MODEL`
 - `HH_MAX_PAGES`, `HH_DELAY_BETWEEN_APPLIES_SECONDS` и retry-настройки
 - `LOG_FILE` — необязательный путь к файлу журнала; по умолчанию создаётся отдельный timestamped-файл в `logs/`
+- `LLM_BASE_URL` — переопределение URL провайдера (для локальных серверов с другим портом)
 
 Заполни конфигурационные файлы:
 
@@ -83,6 +84,8 @@ onsite_cities:
 - OpenAI: https://platform.openai.com/api-keys
 - OpenRouter: https://openrouter.ai/keys
 - OpenCode Go/Zen: https://opencode.ai/auth
+
+Локальные провайдеры (`lmstudio`, `ollama`, `llamacpp`) обычно не требуют ключа.
 
 Для OpenCode Go модель `qwen3.8-flash` автоматически вызывается через Anthropic-compatible endpoint. OpenAI-compatible модели Go используют Chat Completions.
 
