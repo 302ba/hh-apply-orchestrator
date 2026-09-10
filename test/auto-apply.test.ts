@@ -68,12 +68,13 @@ test('accepts configured on-site city', () => {
   assert.equal(checkLocationEligibility(location, ['Волгоград', 'Волжский']).eligible, true);
 });
 
-test('accepts remote work format from escaped HTML source', () => {
-  const source = '&#34;workFormats&#34;:[&#34;ON_SITE&#34;,&#34;REMOTE&#34;,&#34;HYBRID&#34;]';
+test('accepts remote work format from selected workFormats', () => {
+  const source = '&#34;selectedWorkFormats&#34;:[&#34;REMOTE&#34;]';
   const location = parseVacancyLocation([], source);
 
   assert.equal(location.isRemote, true);
-  assert.equal(checkLocationEligibility(location, ['Волгоград']).eligible, true);
+  assert.equal(location.workFormats.includes('REMOTE'), true);
+  assert.equal(checkLocationEligibility(location, [], location.workFormats).eligible, true);
 });
 
 test('accepts remote work format from selected workFormatsElement', () => {
@@ -93,8 +94,42 @@ test('ignores HH generic work format catalog', () => {
   assert.equal(location.isRemote, false);
 });
 
+test('rejects ON_SITE vacancy even when string-array workFormats contains REMOTE', () => {
+  // Simulates the bug: a generic workFormats:["ON_SITE","REMOTE","HYBRID"] catalog
+  // appears first in the page source, but the selected workFormat is ON_SITE.
+  const source = `&#34;workFormats&#34;:[&#34;ON_SITE&#34;,&#34;REMOTE&#34;,&#34;HYBRID&#34;],&#34;workFormat&#34;:&#34;ON_SITE&#34;`;
+  const location = parseVacancyLocation([], source);
+
+  assert.equal(location.isRemote, false);
+  assert.equal(location.workFormats.includes('REMOTE'), false);
+  assert.equal(location.workFormats.includes('ON_SITE'), true);
+});
+
+test('remote work format is required for cities outside the onsite list', () => {
+  const onSiteSource = '&#34;workFormat&#34;:&#34;ON_SITE&#34;,&#34;address&#34;:{&#34;city&#34;:&#34;Волгоград&#34;}';
+  const onSite = parseVacancyLocation([], onSiteSource);
+  assert.equal(
+    checkLocationEligibility(onSite, ['Волгоград'], onSite.workFormats).eligible,
+    true,
+  );
+
+  const moscowOnSiteSource = '&#34;workFormat&#34;:&#34;ON_SITE&#34;,&#34;address&#34;:{&#34;city&#34;:&#34;Москва&#34;}';
+  const moscow = parseVacancyLocation([], moscowOnSiteSource);
+  assert.equal(
+    checkLocationEligibility(moscow, ['Волгоград'], moscow.workFormats).eligible,
+    false,
+  );
+
+  const moscowRemoteSource = '&#34;workFormat&#34;:&#34;REMOTE&#34;,&#34;address&#34;:{&#34;city&#34;:&#34;Москва&#34;}';
+  const moscowRemote = parseVacancyLocation([], moscowRemoteSource);
+  assert.equal(
+    checkLocationEligibility(moscowRemote, ['Волгоград'], moscowRemote.workFormats).eligible,
+    true,
+  );
+});
+
 test('rejects unknown on-site city without remote format', () => {
-  const location = { cities: ['Москва'], isRemote: false };
+  const location = { cities: ['Москва'], isRemote: false, workFormats: [] };
 
   assert.equal(checkLocationEligibility(location, ['Волгоград', 'Волжский']).eligible, false);
 });

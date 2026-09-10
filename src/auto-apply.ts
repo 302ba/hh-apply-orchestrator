@@ -24,7 +24,7 @@ import { generateCoverLetter } from './llm.js';
 import { findExcludedTerm } from './exclusions.js';
 import { checkLocationEligibility, parseVacancyLocation, type VacancyLocation } from './vacancy-location.js';
 import { fileConsole } from './logger.js';
-import { saveCoverLetter } from './letters.js';
+import { loadCachedCoverLetter, saveCoverLetter } from './letters.js';
 
 const console = fileConsole;
 
@@ -57,6 +57,7 @@ export function buildSearchUrl(query: string, pageNum: number, excludedTerms: st
     enable_snippets: 'true',
   });
   if (excludedTerms.length > 0) params.set('excluded_text', excludedTerms.join(','));
+//  return `${HH_BASE_URL}/search/vacancy?resume=b182c9b5ff0c6feb260039ed1f4d5976783767&from=resumelist&hhtmFrom=applicant_profile`;//&${params.toString()}`;
   return `${HH_BASE_URL}/search/vacancy?${params.toString()}`;
 }
 
@@ -204,7 +205,7 @@ async function getVacancyDetails(page: Page, url: string): Promise<VacancyDetail
 
     return { description, location: parseVacancyLocation(jsonLdScripts, sourceHtml) };
   } catch {
-    return { description: '', location: { cities: [], isRemote: false } };
+    return { description: '', location: { cities: [], isRemote: false, workFormats: [] } };
   }
 }
 
@@ -482,7 +483,11 @@ async function main(): Promise<void> {
             stats.skipped++;
             continue;
           }
-          const location = checkLocationEligibility(details.location, profile.onsite_cities);
+          const location = checkLocationEligibility(
+            details.location,
+            profile.onsite_cities,
+            details.location.workFormats,
+          );
           if (!location.eligible) {
             console.log(`      ⏭️  Пропущено по локации: ${location.reason}`);
             stats.skipped++;
@@ -493,7 +498,11 @@ async function main(): Promise<void> {
 
           console.log('      💬 Генерирую письмо...');
           let letter = '';
-          if (automation.dryRun) {
+          const cached = loadCachedCoverLetter(vacancy);
+          if (cached) {
+            letter = cached;
+            console.log('      ♻️  Используется сохранённое письмо из letters/');
+          } else if (automation.dryRun) {
             console.log('      🧪 Dry-run: письмо не сгенерировано и не отправлено');
           } else {
             const letterResult = await generateCoverLetter(vacancy.title, vacancy.employer, details.description);

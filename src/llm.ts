@@ -32,7 +32,7 @@ const RESUME_MODE_PROMPT = `/no_think
 
 [ВСТАВЬ ТЕКСТ ВАКАНСИИ]
 
-Выдай только готовое сопроводительное письмо без анализа.`;
+Выдай только готовое сопроводительное письмо без анализа. Не начинай письмо с "Откликаюсь на позицию"`;
 
 function buildClient() {
   const { provider, apiKey, baseURL } = getLlmConfig();

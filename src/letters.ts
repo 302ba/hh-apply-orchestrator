@@ -43,3 +43,13 @@ export function saveCoverLetter(vacancy: Vacancy, letter: string, directory = LE
   fs.writeFileSync(filePath, content, 'utf8');
   return filePath;
 }
+
+export function loadCachedCoverLetter(
+  vacancy: Vacancy,
+  directory = LETTERS_DIR,
+): string | undefined {
+  const filePath = path.join(directory, coverLetterFilename(vacancy));
+  if (!fs.existsSync(filePath)) return undefined;
+  const content = fs.readFileSync(filePath, 'utf8').trim();
+  return content.length > 0 ? content : undefined;
+}
