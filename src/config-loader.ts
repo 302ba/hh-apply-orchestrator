@@ -68,6 +68,19 @@ export function loadProfile(): ProfileDoc {
   };
 }
 
+export function loadProfileMetadata(): {
+  workFormat: string;
+  onsiteCities: string[];
+  city: string;
+} {
+  const profile = loadProfile();
+  return {
+    workFormat: profile.work_format,
+    onsiteCities: profile.onsite_cities,
+    city: profile.city,
+  };
+}
+
 export function loadResume(): string {
   if (fs.existsSync(RESUME_FILE)) {
     return fs.readFileSync(RESUME_FILE, 'utf-8').trim();

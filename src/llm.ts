@@ -24,6 +24,12 @@ const RESUME_MODE_PROMPT = `/no_think
 
 Не выдумывай никакие факты.
 
+### МОИ ПАРАМЕТРЫ
+
+- Формат работы: [WORK_FORMAT]
+- Город: [CITY]
+- Готовность к офису в: [ONSITE_CITIES]
+
 ### МОЁ РЕЗЮМЕ
 
 [ВСТАВЬ CV]
@@ -166,9 +172,15 @@ export async function generateCoverLetter(
   const profile = useResume && resume ? '' : buildProfilePrompt();
 
   const prompt = useResume && resume
-    ? RESUME_MODE_PROMPT
-        .replace('[ВСТАВЬ CV]', resume)
-        .replace('[ВСТАВЬ ТЕКСТ ВАКАНСИИ]', description.slice(0, 2500))
+    ? (() => {
+        const profile = loadProfile();
+        return RESUME_MODE_PROMPT
+          .replace('[ВСТАВЬ CV]', resume)
+          .replace('[ВСТАВЬ ТЕКСТ ВАКАНСИИ]', description.slice(0, 2500))
+          .replace('[WORK_FORMAT]', profile.work_format || 'не указан')
+          .replace('[CITY]', profile.city || 'не указан')
+          .replace('[ONSITE_CITIES]', profile.onsite_cities.join(', ') || 'не указаны');
+      })()
     : `${COVER_LETTER_SYSTEM_PROMPT}
 
 ОБО МНЕ:
