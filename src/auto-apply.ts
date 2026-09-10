@@ -260,14 +260,52 @@ async function applicationFailureResult(page: Page): Promise<ApplyResult> {
   return { status: 'error', reason: await applicationFailureReason(page) };
 }
 
-async function resultAfterSubmit(page: Page, successReason: string): Promise<ApplyResult> {
-  if (await responseConfirmed(page)) return { status: 'success', reason: successReason };
+async function resultAfterSubmit(
+  page: Page,
+  successReason: string,
+  letter: string,
+): Promise<ApplyResult> {
+  if (await responseConfirmed(page)) {
+    const attached = await attachCoverLetterAfterApply(page, letter);
+    if (attached) return { status: 'success', reason: `${successReason} + письмо после отклика` };
+    return { status: 'success', reason: successReason };
+  }
 
   // HH may navigate to a questionnaire page after the main submit. Detect and answer it.
   const handled = await handleQuestionnaireIfPresent(page);
   if (handled) return handled;
 
   return applicationFailureResult(page);
+}
+
+async function attachCoverLetterAfterApply(page: Page, letter: string): Promise<boolean> {
+  if (!letter) return false;
+  const attachBtn = page.locator("[data-qa='responded-success-attach-cover-letter']").first();
+  if ((await attachBtn.count()) === 0) return false;
+
+  console.log('      📎 Нашёл кнопку «Приложить сопроводительное письмо», прикрепляю...');
+  await attachBtn.click();
+  await page.waitForTimeout(2_000);
+
+  // The popup contains the cover letter textarea directly. No "Добавить" step needed.
+  const letterArea = page
+    .locator("textarea[data-qa='vacancy-response-popup-form-letter-input']")
+    .first();
+  if ((await letterArea.count()) === 0) {
+    console.log('      ⚠️  Поле письма в попапе не найдено');
+    return false;
+  }
+  await letterArea.fill(letter);
+  await page.waitForTimeout(500);
+
+  const submit = page.locator("[data-qa='vacancy-response-letter-submit']").first();
+  if ((await submit.count()) === 0) {
+    console.log('      ⚠️  Кнопка «Отправить» в попапе не найдена');
+    return false;
+  }
+  await submit.click();
+  await page.waitForTimeout(3_000);
+  return responseConfirmed(page);
 }
 
 async function fillCoverLetter(
@@ -385,7 +423,7 @@ async function applyToVacancy(page: Page, url: string, message: string, semiAuto
       if ((await submitBtn.count()) > 0) {
         await submitBtn.click();
         await page.waitForTimeout(3_000);
-        return resultAfterSubmit(page, 'С письмом');
+        return resultAfterSubmit(page, 'С письмом', message);
       }
     }
 
@@ -426,7 +464,7 @@ async function applyToVacancy(page: Page, url: string, message: string, semiAuto
           if ((await submitBtn.count()) > 0) {
             await submitBtn.click();
             await page.waitForTimeout(3_000);
-            return resultAfterSubmit(page, 'С письмом (меню)');
+            return resultAfterSubmit(page, 'С письмом (меню)', message);
           }
         }
       }
@@ -459,7 +497,7 @@ async function applyToVacancy(page: Page, url: string, message: string, semiAuto
           console.log('      📨 Нажимаю кнопку отправки...');
           await submitBtn.click();
           await page.waitForTimeout(3_000);
-          return resultAfterSubmit(page, 'С письмом (после отклика)');
+          return resultAfterSubmit(page, 'С письмом (после отклика)', message);
         }
 
         const allButtons = await page.locator('button').all();
@@ -469,7 +507,7 @@ async function applyToVacancy(page: Page, url: string, message: string, semiAuto
             console.log(`      📨 Нашёл кнопку: ${txt}`);
             await btn.click();
             await page.waitForTimeout(3_000);
-            return resultAfterSubmit(page, 'С письмом');
+            return resultAfterSubmit(page, 'С письмом', message);
           }
         }
       }
