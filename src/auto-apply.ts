@@ -58,7 +58,6 @@ export function buildSearchUrl(query: string, pageNum: number, excludedTerms: st
     page: String(pageNum),
     enable_snippets: 'true',
     search_period: '3',
-    professional_role: '96',
   });
   if (excludedTerms.length > 0) params.set('excluded_text', excludedTerms.join(','));
   return `${HH_BASE_URL}/search/vacancy?${params.toString()}`;
@@ -159,13 +158,9 @@ async function searchVacancies(
       return [];
     }
 
-    try {
-      await page.waitForSelector("[data-qa='vacancy-serp__vacancy']", { timeout: 3_000 });
-    } catch {
-      return [];
-    }
-
     const cards = await page.locator("[data-qa='vacancy-serp__vacancy']").all();
+    if (cards.length === 0) return [];
+
     const vacancies: Vacancy[] = [];
 
     for (const card of cards) {
