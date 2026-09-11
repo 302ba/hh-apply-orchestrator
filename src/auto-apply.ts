@@ -57,9 +57,9 @@ export function buildSearchUrl(query: string, pageNum: number, excludedTerms: st
     items_on_page: '20',
     page: String(pageNum),
     enable_snippets: 'true',
+    search_period: '3',
   });
   if (excludedTerms.length > 0) params.set('excluded_text', excludedTerms.join(','));
-//  return `${HH_BASE_URL}/search/vacancy?resume=b182c9b5ff0c6feb260039ed1f4d5976783767&from=resumelist&hhtmFrom=applicant_profile`;//&${params.toString()}`;
   return `${HH_BASE_URL}/search/vacancy?${params.toString()}`;
 }
 
@@ -158,7 +158,11 @@ async function searchVacancies(
       return [];
     }
 
-    await page.waitForSelector("[data-qa='vacancy-serp__vacancy']", { timeout: 10_000 });
+    try {
+      await page.waitForSelector("[data-qa='vacancy-serp__vacancy']", { timeout: 10_000 });
+    } catch {
+      return [];
+    }
 
     const cards = await page.locator("[data-qa='vacancy-serp__vacancy']").all();
     const vacancies: Vacancy[] = [];
