@@ -282,6 +282,16 @@ async function resultAfterSubmit(
   return applicationFailureResult(page);
 }
 
+async function dismissRelocationWarning(page: Page): Promise<void> {
+  const warning = page.locator("[data-qa='relocation-warning-title']").first();
+  if ((await warning.count()) === 0) return;
+  const confirm = page.locator("[data-qa='relocation-warning-confirm']").first();
+  if ((await confirm.count()) === 0) return;
+  console.log('      🌐 Подтверждаю отклик на вакансию в другой стране');
+  await confirm.click();
+  await page.waitForTimeout(1_000);
+}
+
 async function attachCoverLetterAfterApply(page: Page, letter: string): Promise<boolean> {
   if (!letter) return false;
   const attachBtn = page.locator("[data-qa='responded-success-attach-cover-letter']").first();
@@ -309,6 +319,7 @@ async function attachCoverLetterAfterApply(page: Page, letter: string): Promise<
   }
   await submit.click();
   await page.waitForTimeout(3_000);
+  await dismissRelocationWarning(page);
   return responseConfirmed(page);
 }
 
@@ -406,6 +417,8 @@ async function applyToVacancy(page: Page, url: string, message: string, semiAuto
   try {
     await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 20_000 });
     await page.waitForTimeout(3_000);
+
+    await dismissRelocationWarning(page);
 
     const handledStatus = await getHandledApplicationStatus(page);
     if (handledStatus) return { status: 'skipped', reason: handledStatus };
