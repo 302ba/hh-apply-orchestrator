@@ -13,7 +13,7 @@ import {
 import { getAutomationConfig, getLlmConfig, getLlmSampling } from '../src/config.ts';
 import { parseCsvList, loadResume } from '../src/config-loader.ts';
 import { findExcludedTerm } from '../src/exclusions.ts';
-import { saveCoverLetter } from '../src/letters.ts';
+import { saveCoverLetter, loadCachedCoverLetter } from '../src/letters.ts';
 import { cleanCoverLetter } from '../src/llm.ts';
 import { checkLocationEligibility, parseVacancyLocation } from '../src/vacancy-location.ts';
 
@@ -176,6 +176,16 @@ test('saves generated letter with vacancy metadata', () => {
 
   assert.equal(path.basename(filePath), '123-PHP - Vue- разработчик-.md');
   assert.match(fs.readFileSync(filePath, 'utf8'), /Добрый день! Письмо\./);
+});
+
+test('loads cached letter without metadata header', () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'hh-letters-'));
+  const vacancy = { title: 'Dev', employer: 'Company', url: 'https://hh.ru/vacancy/456' };
+  saveCoverLetter(vacancy, 'Текст письма.', directory);
+
+  const cached = loadCachedCoverLetter(vacancy, directory);
+  assert.equal(cached, 'Текст письма.');
+  assert.doesNotMatch(cached ?? '', /# Dev|Компания|Ссылка/);
 });
 
 test('removes unavailable website placeholders from generated letter', () => {

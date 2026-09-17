@@ -50,6 +50,10 @@ export function loadCachedCoverLetter(
 ): string | undefined {
   const filePath = path.join(directory, coverLetterFilename(vacancy));
   if (!fs.existsSync(filePath)) return undefined;
-  const content = fs.readFileSync(filePath, 'utf8').trim();
-  return content.length > 0 ? content : undefined;
+  const content = fs.readFileSync(filePath, 'utf8');
+  // Saved letters start with a markdown header (# title, - Компания, - Ссылка, ---).
+  // Return only the actual letter body so it isn't pasted into HH's textarea.
+  const body = content.split(/\n---\s*\n/, 2)[1] ?? content;
+  const trimmed = body.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
 }

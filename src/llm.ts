@@ -172,7 +172,8 @@ export async function generateCoverLetter(
 
   const profile = useResume && resume ? '' : buildProfilePrompt();
 
-  const prompt = useResume && resume
+  const system = COVER_LETTER_SYSTEM_PROMPT;
+  const userPrompt = useResume && resume
     ? (() => {
         const profile = loadProfile();
         return RESUME_MODE_PROMPT
@@ -182,9 +183,7 @@ export async function generateCoverLetter(
           .replace('[CITY]', profile.city || 'не указан')
           .replace('[ONSITE_CITIES]', profile.onsite_cities.join(', ') || 'не указаны');
       })()
-    : `${COVER_LETTER_SYSTEM_PROMPT}
-
-ОБО МНЕ:
+    : `ОБО МНЕ:
 ${profile}
 
 ВАКАНСИЯ:
@@ -201,12 +200,13 @@ ${profile}
     try {
       const currentPrompt = parts.length > 0
         ? `Продолжи письмо с того места, где оно оборвалось. Не повторяй уже написанное, начни сразу с продолжения:\n\n${parts[parts.length - 1].slice(-300)}`
-        : prompt;
+        : userPrompt;
       if (usesMessagesEndpoint(provider, model)) {
         const response = await buildAnthropicClient().messages.create({
           model,
           // Cover letters need direct text, not a reasoning trace.
           thinking: { type: 'disabled' },
+          system,
           max_tokens: llmMaxTokens,
           temperature: sampling.temperature,
           top_p: sampling.topP,
@@ -238,7 +238,10 @@ ${profile}
 
       const response = await buildClient().chat.completions.create({
         model,
-        messages: [{ role: 'user', content: currentPrompt }],
+        messages: [
+          { role: 'system', content: system },
+          { role: 'user', content: currentPrompt },
+        ],
         max_tokens: llmMaxTokens,
         temperature: sampling.temperature,
         top_p: sampling.topP,
