@@ -668,8 +668,10 @@ async function processVacancy(
     }
   }
 
-  console.log(`      ⏳ Пауза ${automation.delayBetweenAppliesSeconds} сек...`);
-  await new Promise((r) => setTimeout(r, automation.delayBetweenAppliesSeconds * 1000));
+  if (automation.mode === 'auto') {
+    console.log(`      ⏳ Пауза ${automation.delayBetweenAppliesSeconds} сек...`);
+    await new Promise((r) => setTimeout(r, automation.delayBetweenAppliesSeconds * 1000));
+  }
 }
 
 async function processSingleVacancy(
