@@ -583,13 +583,14 @@ async function processVacancy(
   if (!automation.generateOnly) {
     const titleMatch = findExcludedTerm(`${title}\n${employer}`, excludedTerms);
     if (titleMatch) {
-      skip(`по исключению: ${titleMatch}`);
+      // Exclusion is deterministic from excluded.csv — re-detected every run, no persist.
+      skip(`по исключению: ${titleMatch}`, false);
       return;
     }
 
     const descriptionMatch = findExcludedTerm(details.description, excludedTerms);
     if (descriptionMatch) {
-      skip(`по исключению: ${descriptionMatch}`);
+      skip(`по исключению: ${descriptionMatch}`, false);
       return;
     }
   }
@@ -608,7 +609,8 @@ async function processVacancy(
       details.location.workFormats,
     );
     if (!location.eligible) {
-      skip(`по локации: ${location.reason}`);
+      // Location is deterministic from profile.md — re-detected every run, no persist.
+      skip(`по локации: ${location.reason}`, false);
       return;
     }
     console.log(`      📍 Локация: ${location.reason}`);
