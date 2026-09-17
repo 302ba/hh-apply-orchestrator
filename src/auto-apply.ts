@@ -576,7 +576,7 @@ async function processVacancy(
 
   const skip = (reason: string, persist = true): void => {
     console.log(`      ⏭️  Пропущено: ${reason}`);
-    if (persist) addSkippedKey(key);
+    if (persist && !automation.generateOnly) addSkippedKey(key);
     stats.skipped++;
   };
 
@@ -601,16 +601,18 @@ async function processVacancy(
     skip(handledStatus, false);
     return;
   }
-  const location = checkLocationEligibility(
-    details.location,
-    profile.onsite_cities,
-    details.location.workFormats,
-  );
-  if (!location.eligible) {
-    skip(`по локации: ${location.reason}`);
-    return;
+  if (!automation.generateOnly) {
+    const location = checkLocationEligibility(
+      details.location,
+      profile.onsite_cities,
+      details.location.workFormats,
+    );
+    if (!location.eligible) {
+      skip(`по локации: ${location.reason}`);
+      return;
+    }
+    console.log(`      📍 Локация: ${location.reason}`);
   }
-  console.log(`      📍 Локация: ${location.reason}`);
 
   console.log('      💬 Генерирую письмо...');
   let letter = '';
