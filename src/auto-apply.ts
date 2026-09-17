@@ -32,6 +32,8 @@ import { loadCachedCoverLetter, saveCoverLetter } from './letters.js';
 const console = fileConsole;
 
 interface VacancyDetails {
+  title: string;
+  employer: string;
   description: string;
   location: VacancyLocation;
 }
@@ -198,6 +200,18 @@ async function getVacancyDetails(page: Page, url: string): Promise<VacancyDetail
     const jsonLdScripts = await page.locator("script[type='application/ld+json']").allTextContents();
     const sourceHtml = await page.content();
 
+    let title = '';
+    try {
+      const titleEl = page.locator("[data-qa='vacancy-title'], h1").first();
+      if ((await titleEl.count()) > 0) title = (await titleEl.innerText()).trim();
+    } catch {}
+
+    let employer = '';
+    try {
+      const employerEl = page.locator("[data-qa='vacancy-company-name'], [data-qa='vacancy-serp__vacancy-employer']").first();
+      if ((await employerEl.count()) > 0) employer = (await employerEl.innerText()).trim();
+    } catch {}
+
     let description = '';
     try {
       await page.waitForSelector("[data-qa='vacancy-description']", { timeout: 10_000 });
@@ -207,9 +221,9 @@ async function getVacancyDetails(page: Page, url: string): Promise<VacancyDetail
       // Location data can still be available in JSON-LD when description markup changes.
     }
 
-    return { description, location: parseVacancyLocation(jsonLdScripts, sourceHtml) };
+    return { title, employer, description, location: parseVacancyLocation(jsonLdScripts, sourceHtml) };
   } catch {
-    return { description: '', location: { cities: [], isRemote: false, workFormats: [] } };
+    return { title: '', employer: '', description: '', location: { cities: [], isRemote: false, workFormats: [] } };
   }
 }
 
@@ -549,17 +563,21 @@ async function processVacancy(
 ): Promise<void> {
   const profile = loadProfile();
 
-  console.log(`\n  [${index + 1}/${total}] ${vacancy.title.slice(0, 50)}...`);
-  console.log(`      Компания: ${vacancy.employer}`);
+  const details = await getVacancyDetails(page, vacancy.url);
+  vacancy.title = details.title || vacancy.title;
+  vacancy.employer = details.employer || vacancy.employer;
+  const { title, employer } = vacancy;
 
-  const titleMatch = findExcludedTerm(`${vacancy.title}\n${vacancy.employer}`, excludedTerms);
+  console.log(`\n  [${index + 1}/${total}] ${title.slice(0, 50)}...`);
+  console.log(`      Компания: ${employer}`);
+
+  const titleMatch = findExcludedTerm(`${title}\n${employer}`, excludedTerms);
   if (titleMatch) {
     console.log(`      ⏭️  Пропущено по исключению: ${titleMatch}`);
     stats.skipped++;
     return;
   }
 
-  const details = await getVacancyDetails(page, vacancy.url);
   const handledStatus = await getHandledApplicationStatus(page);
   if (handledStatus) {
     console.log(`      ⏭️  Пропущено: ${handledStatus}`);
@@ -594,7 +612,7 @@ async function processVacancy(
   } else if (automation.dryRun) {
     console.log('      🧪 Dry-run: письмо не сгенерировано и не отправлено');
   } else {
-    const letterResult = await generateCoverLetter(vacancy.title, vacancy.employer, details.description);
+    const letterResult = await generateCoverLetter(title, employer, details.description);
     letter = letterResult.text;
 
     if (letter) console.log(`      📝 Письмо: ${letter.slice(0, 80)}...`);
