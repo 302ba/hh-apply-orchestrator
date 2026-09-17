@@ -574,9 +574,9 @@ async function processVacancy(
   console.log(`\n  [${index + 1}/${total}] ${title.slice(0, 50)}... ${vacancy.url}`);
   console.log(`      Компания: ${employer}`);
 
-  const skip = (reason: string): void => {
+  const skip = (reason: string, persist = true): void => {
     console.log(`      ⏭️  Пропущено: ${reason}`);
-    addSkippedKey(key);
+    if (persist) addSkippedKey(key);
     stats.skipped++;
   };
 
@@ -589,7 +589,8 @@ async function processVacancy(
   const handledStatus = await getHandledApplicationStatus(page);
   const alreadyApplied = handledStatus === 'Уже откликались' || handledStatus === 'Отклик уже отправлен';
   if (handledStatus && !alreadyApplied) {
-    skip(handledStatus);
+    // Status-based outcomes (rejected, withdrawn) are re-detected by HH each run; no need to persist.
+    skip(handledStatus, false);
     return;
   }
   const descriptionMatch = findExcludedTerm(details.description, excludedTerms);
@@ -656,7 +657,8 @@ async function processVacancy(
       console.log('      ✅ Письмо прикреплено');
       stats.success++;
     } else {
-      skip('письмо уже прикреплено или кнопка не найдена');
+      // Already-applied is re-detected by HH every run; don't pollute the skip list.
+      skip('письмо уже прикреплено или кнопка не найдена', false);
     }
   } else {
     console.log('      📤 Отправляю отклик...');
@@ -666,7 +668,8 @@ async function processVacancy(
       console.log(`      ✅ Успех! (${result.reason})`);
       stats.success++;
     } else if (result.status === 'skipped') {
-      skip(result.reason);
+      // applyToVacancy reports status-based skips (already applied, rejected) via getHandledApplicationStatus.
+      skip(result.reason, false);
     } else {
       console.log(`      ❌ Ошибка: ${result.reason}`);
       stats.error++;

@@ -2,13 +2,21 @@
 // ABOUTME: Loaded at startup so previously skipped vacancies are auto-skipped on later runs.
 import fs from 'node:fs';
 import path from 'node:path';
-import { CONFIG_DIR } from './config-loader.js';
 
-export const SKIPPED_FILE = path.join(CONFIG_DIR, 'skipped.txt');
+function configDir(): string {
+  return process.env.CONFIG_DIR
+    ? path.resolve(process.env.CONFIG_DIR)
+    : path.resolve(process.cwd(), 'config');
+}
+
+function skippedFile(): string {
+  return path.join(configDir(), 'skipped.txt');
+}
 
 export function loadSkippedKeys(): Set<string> {
-  if (!fs.existsSync(SKIPPED_FILE)) return new Set();
-  const content = fs.readFileSync(SKIPPED_FILE, 'utf8');
+  const file = skippedFile();
+  if (!fs.existsSync(file)) return new Set();
+  const content = fs.readFileSync(file, 'utf8');
   const keys = new Set<string>();
   for (const line of content.split(/\r?\n/)) {
     const key = line.trim();
@@ -21,6 +29,6 @@ export function addSkippedKey(key: string): void {
   const existing = loadSkippedKeys();
   if (existing.has(key)) return;
   existing.add(key);
-  fs.mkdirSync(CONFIG_DIR, { recursive: true });
-  fs.writeFileSync(SKIPPED_FILE, [...existing].join('\n') + '\n', 'utf8');
+  fs.mkdirSync(configDir(), { recursive: true });
+  fs.writeFileSync(skippedFile(), [...existing].join('\n') + '\n', 'utf8');
 }
