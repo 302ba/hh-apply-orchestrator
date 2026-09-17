@@ -626,7 +626,8 @@ async function processVacancy(
 
     if (letter) console.log(`      📝 Письмо: ${letter.slice(0, 80)}...`);
     if (!letter) {
-      skip(letterResult.reason ?? 'письмо не сгенерировано');
+      // LLM outage / empty response is transient — don't burn the vacancy forever.
+      skip(letterResult.reason ?? 'письмо не сгенерировано', false);
       return;
     }
 
