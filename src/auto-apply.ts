@@ -8,6 +8,7 @@ import {
   getAutomationConfig,
   getLlmConfig,
   sessionExists,
+  readVacancyUrl,
   type ApplyResult,
   type Vacancy,
 } from './config.js';
@@ -53,7 +54,7 @@ export function normalizeVacancyUrl(href: string): string {
 export function buildSearchUrl(query: string, pageNum: number, excludedTerms: string[] = []): string {
   const params = new URLSearchParams({
     text: query,
-    area: '113',
+//    area: '113',
     items_on_page: '20',
     page: String(pageNum),
     enable_snippets: 'true',
@@ -537,6 +538,120 @@ async function applyToVacancy(page: Page, url: string, message: string, semiAuto
   }
 }
 
+async function processVacancy(
+  page: Page,
+  vacancy: Vacancy,
+  excludedTerms: string[],
+  automation: ReturnType<typeof getAutomationConfig>,
+  stats: { success: number; skipped: number; error: number },
+  index: number,
+  total: number,
+): Promise<void> {
+  const profile = loadProfile();
+
+  console.log(`\n  [${index + 1}/${total}] ${vacancy.title.slice(0, 50)}...`);
+  console.log(`      Компания: ${vacancy.employer}`);
+
+  const titleMatch = findExcludedTerm(`${vacancy.title}\n${vacancy.employer}`, excludedTerms);
+  if (titleMatch) {
+    console.log(`      ⏭️  Пропущено по исключению: ${titleMatch}`);
+    stats.skipped++;
+    return;
+  }
+
+  const details = await getVacancyDetails(page, vacancy.url);
+  const handledStatus = await getHandledApplicationStatus(page);
+  if (handledStatus) {
+    console.log(`      ⏭️  Пропущено: ${handledStatus}`);
+    stats.skipped++;
+    return;
+  }
+  const descriptionMatch = findExcludedTerm(details.description, excludedTerms);
+  if (descriptionMatch) {
+    console.log(`      ⏭️  Пропущено по исключению: ${descriptionMatch}`);
+    stats.skipped++;
+    return;
+  }
+  const location = checkLocationEligibility(
+    details.location,
+    profile.onsite_cities,
+    details.location.workFormats,
+  );
+  if (!location.eligible) {
+    console.log(`      ⏭️  Пропущено по локации: ${location.reason}`);
+    stats.skipped++;
+    return;
+  }
+  console.log(`      Link: ${vacancy.url}`);
+  console.log(`      📍 Локация: ${location.reason}`);
+
+  console.log('      💬 Генерирую письмо...');
+  let letter = '';
+  const cached = loadCachedCoverLetter(vacancy);
+  if (cached) {
+    letter = cached;
+    console.log('      ♻️  Используется сохранённое письмо из letters/');
+  } else if (automation.dryRun) {
+    console.log('      🧪 Dry-run: письмо не сгенерировано и не отправлено');
+  } else {
+    const letterResult = await generateCoverLetter(vacancy.title, vacancy.employer, details.description);
+    letter = letterResult.text;
+
+    if (letter) console.log(`      📝 Письмо: ${letter.slice(0, 80)}...`);
+    if (!letter) {
+      console.log(`      ⏭️  Пропущено: ${letterResult.reason ?? 'письмо не сгенерировано'}`);
+      stats.skipped++;
+      return;
+    }
+
+    try {
+      const letterPath = saveCoverLetter(vacancy, letter);
+      console.log(`      💾 Письмо сохранено: ${letterPath}`);
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : String(err);
+      console.log(`      ❌ Ошибка сохранения письма: ${reason}`);
+      stats.error++;
+      return;
+    }
+  }
+
+  if (automation.dryRun) {
+    console.log('      🧪 Dry-run: отклик не отправлен');
+    stats.skipped++;
+    console.log(`      ⏳ Пауза ${automation.delayBetweenAppliesSeconds} сек...`);
+    await new Promise((r) => setTimeout(r, automation.delayBetweenAppliesSeconds * 1000));
+    return;
+  }
+
+  console.log('      📤 Отправляю отклик...');
+  const result = await applyToVacancy(page, vacancy.url, letter, automation.mode === 'semi');
+
+  if (result.status === 'success') {
+    console.log(`      ✅ Успех! (${result.reason})`);
+    stats.success++;
+  } else if (result.status === 'skipped') {
+    console.log(`      ⏭️  Пропущено: ${result.reason}`);
+    stats.skipped++;
+  } else {
+    console.log(`      ❌ Ошибка: ${result.reason}`);
+    stats.error++;
+  }
+
+  console.log(`      ⏳ Пауза ${automation.delayBetweenAppliesSeconds} сек...`);
+  await new Promise((r) => setTimeout(r, automation.delayBetweenAppliesSeconds * 1000));
+}
+
+async function processSingleVacancy(
+  page: Page,
+  url: string,
+  excludedTerms: string[],
+  automation: ReturnType<typeof getAutomationConfig>,
+  stats: { success: number; skipped: number; error: number },
+): Promise<void> {
+  const vacancy: Vacancy = { url, title: '', employer: '' };
+  await processVacancy(page, vacancy, excludedTerms, automation, stats, 0, 1);
+}
+
 async function main(): Promise<void> {
   console.log('\n' + '='.repeat(50));
   console.log('🚀 HH.ru Автооткликатор');
@@ -544,15 +659,22 @@ async function main(): Promise<void> {
 
   // Load profile before validation so its location rules apply to every vacancy.
   const profile = loadProfile();
-  const searchQueries = loadSearchQueries();
   const excludedTerms = loadExcludedText();
-  assertConfigured(searchQueries, profile);
+  const vacancyUrl = readVacancyUrl();
 
   const llm = getLlmConfig();
   const automation = getAutomationConfig();
   const mode = automation.mode === 'semi' ? 'Полуавтоматический (--semi)' : 'Полный автомат';
-  console.log(`\n📋 Поисковые запросы: ${searchQueries.join(', ')}`);
-  console.log(`📄 Страниц на запрос: ${automation.maxPages}`);
+
+  if (vacancyUrl) {
+    console.log(`\n🔗 Режим одной вакансии: ${vacancyUrl}`);
+  } else {
+    const searchQueries = loadSearchQueries();
+    assertConfigured(searchQueries, profile);
+    console.log(`\n📋 Поисковые запросы: ${searchQueries.join(', ')}`);
+    console.log(`📄 Страниц на запрос: ${automation.maxPages}`);
+  }
+
   console.log(`⏱️  Пауза между откликами: ${automation.delayBetweenAppliesSeconds} сек`);
   console.log(`🔁 Повторы чтения/LLM: ${automation.readRetries}/${automation.llmRetries}`);
   console.log(`🤖 LLM: ${llm.provider} / ${llm.model}`);
@@ -568,113 +690,29 @@ async function main(): Promise<void> {
   const page = await context.newPage();
 
   try {
-    for (const query of searchQueries) {
-      console.log(`\n🔍 Поиск: ${query}`);
+    if (vacancyUrl) {
+      await processSingleVacancy(page, vacancyUrl, excludedTerms, automation, stats);
+    } else {
+      const searchQueries = loadSearchQueries();
+      for (const query of searchQueries) {
+        console.log(`\n🔍 Поиск: ${query}`);
 
-      for (let pageNum = 0; pageNum < automation.maxPages; pageNum++) {
-        console.log(`  📄 Страница ${pageNum + 1}`);
+        for (let pageNum = 0; pageNum < automation.maxPages; pageNum++) {
+          console.log(`  📄 Страница ${pageNum + 1}`);
 
-        const vacancies = deduplicateVacancies(
-          await searchVacancies(page, query, pageNum, excludedTerms),
-        ).filter((vacancy) => {
-          const key = vacancyKey(vacancy.url);
-          if (seenVacancies.has(key)) return false;
-          seenVacancies.add(key);
-          return true;
-        });
-        console.log(`  📊 Найдено вакансий: ${vacancies.length}`);
+          const vacancies = deduplicateVacancies(
+            await searchVacancies(page, query, pageNum, excludedTerms),
+          ).filter((vacancy) => {
+            const key = vacancyKey(vacancy.url);
+            if (seenVacancies.has(key)) return false;
+            seenVacancies.add(key);
+            return true;
+          });
+          console.log(`  📊 Найдено вакансий: ${vacancies.length}`);
 
-        for (const [i, vacancy] of vacancies.entries()) {
-          console.log(`\n  [${i + 1}/${vacancies.length}] ${vacancy.title.slice(0, 50)}...`);
-          console.log(`      Компания: ${vacancy.employer}`);
-
-          const titleMatch = findExcludedTerm(`${vacancy.title}\n${vacancy.employer}`, excludedTerms);
-          if (titleMatch) {
-            console.log(`      ⏭️  Пропущено по исключению: ${titleMatch}`);
-            stats.skipped++;
-            continue;
+          for (const [i, vacancy] of vacancies.entries()) {
+            await processVacancy(page, vacancy, excludedTerms, automation, stats, i, vacancies.length);
           }
-
-          const details = await getVacancyDetails(page, vacancy.url);
-          const handledStatus = await getHandledApplicationStatus(page);
-          if (handledStatus) {
-            console.log(`      ⏭️  Пропущено: ${handledStatus}`);
-            stats.skipped++;
-            continue;
-          }
-          const descriptionMatch = findExcludedTerm(details.description, excludedTerms);
-          if (descriptionMatch) {
-            console.log(`      ⏭️  Пропущено по исключению: ${descriptionMatch}`);
-            stats.skipped++;
-            continue;
-          }
-          const location = checkLocationEligibility(
-            details.location,
-            profile.onsite_cities,
-            details.location.workFormats,
-          );
-          if (!location.eligible) {
-            console.log(`      ⏭️  Пропущено по локации: ${location.reason}`);
-            stats.skipped++;
-            continue;
-          }
-          console.log(`      Link: ${vacancy.url}`);
-          console.log(`      📍 Локация: ${location.reason}`);
-
-          console.log('      💬 Генерирую письмо...');
-          let letter = '';
-          const cached = loadCachedCoverLetter(vacancy);
-          if (cached) {
-            letter = cached;
-            console.log('      ♻️  Используется сохранённое письмо из letters/');
-          } else if (automation.dryRun) {
-            console.log('      🧪 Dry-run: письмо не сгенерировано и не отправлено');
-          } else {
-            const letterResult = await generateCoverLetter(vacancy.title, vacancy.employer, details.description);
-            letter = letterResult.text;
-
-            if (letter) console.log(`      📝 Письмо: ${letter.slice(0, 80)}...`);
-            if (!letter) {
-              console.log(`      ⏭️  Пропущено: ${letterResult.reason ?? 'письмо не сгенерировано'}`);
-              stats.skipped++;
-              continue;
-            }
-
-            try {
-              const letterPath = saveCoverLetter(vacancy, letter);
-              console.log(`      💾 Письмо сохранено: ${letterPath}`);
-            } catch (err) {
-              const reason = err instanceof Error ? err.message : String(err);
-              console.log(`      ❌ Ошибка сохранения письма: ${reason}`);
-              stats.error++;
-              continue;
-            }
-          }
-
-          if (automation.dryRun) {
-            console.log('      🧪 Dry-run: отклик не отправлен');
-            stats.skipped++;
-            console.log(`      ⏳ Пауза ${automation.delayBetweenAppliesSeconds} сек...`);
-            await new Promise((r) => setTimeout(r, automation.delayBetweenAppliesSeconds * 1000));
-            continue;
-          }
-
-          console.log('      📤 Отправляю отклик...');
-          const result = await applyToVacancy(page, vacancy.url, letter, automation.mode === 'semi');
-
-          if (result.status === 'success') {
-            console.log(`      ✅ Успех! (${result.reason})`);
-            stats.success++;
-          } else if (result.status === 'skipped') {
-            console.log(`      ⏭️  Пропущено: ${result.reason}`);
-            stats.skipped++;
-          } else {
-            console.log(`      ❌ Ошибка: ${result.reason}`);
-            stats.error++;
-          }
-
-          console.log(`      ⏳ Пауза ${automation.delayBetweenAppliesSeconds} сек...`);
-          await new Promise((r) => setTimeout(r, automation.delayBetweenAppliesSeconds * 1000));
         }
       }
     }

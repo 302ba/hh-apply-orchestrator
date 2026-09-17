@@ -187,6 +187,14 @@ function readDryRun(): boolean {
   return process.argv.includes('--dry');
 }
 
+export function readVacancyUrl(): string | undefined {
+  const idx = process.argv.indexOf('--url');
+  if (idx !== -1 && process.argv[idx + 1]) return process.argv[idx + 1];
+  const env = process.env.VACANCY_URL;
+  if (env && env.trim()) return env.trim();
+  return undefined;
+}
+
 function readApplyMode(): ApplyMode {
   const raw = (process.env.SEMI_AUTO ?? '').toLowerCase();
   if (raw === 'true' || raw === '1' || raw === 'yes') return 'semi';
