@@ -22,7 +22,9 @@ export interface ProfileDoc {
   body: string;
 }
 
-export const CONFIG_DIR = path.resolve(process.cwd(), 'config');
+export const CONFIG_DIR = process.env.CONFIG_DIR
+  ? path.resolve(process.env.CONFIG_DIR)
+  : path.resolve(process.cwd(), 'config');
 export const PROFILE_FILE = path.join(CONFIG_DIR, 'profile.md');
 export const PROFILE_EXAMPLE = path.join(CONFIG_DIR, 'profile.md.example');
 export const RESUME_FILE = path.join(CONFIG_DIR, 'resume.md');

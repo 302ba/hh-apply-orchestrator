@@ -28,6 +28,7 @@ import { findExcludedTerm } from './exclusions.js';
 import { checkLocationEligibility, parseVacancyLocation, type VacancyLocation } from './vacancy-location.js';
 import { fileConsole } from './logger.js';
 import { loadCachedCoverLetter, saveCoverLetter } from './letters.js';
+import { loadSkippedKeys, addSkippedKey } from './skip-state.js';
 
 const console = fileConsole;
 
@@ -568,28 +569,32 @@ async function processVacancy(
   vacancy.title = details.title || vacancy.title;
   vacancy.employer = details.employer || vacancy.employer;
   const { title, employer } = vacancy;
+  const key = vacancyKey(vacancy.url);
 
   console.log(`\n  [${index + 1}/${total}] ${title.slice(0, 50)}... ${vacancy.url}`);
   console.log(`      Компания: ${employer}`);
 
+  const skip = (reason: string): void => {
+    console.log(`      ⏭️  Пропущено: ${reason}`);
+    addSkippedKey(key);
+    stats.skipped++;
+  };
+
   const titleMatch = findExcludedTerm(`${title}\n${employer}`, excludedTerms);
   if (titleMatch) {
-    console.log(`      ⏭️  Пропущено по исключению: ${titleMatch}`);
-    stats.skipped++;
+    skip(`по исключению: ${titleMatch}`);
     return;
   }
 
   const handledStatus = await getHandledApplicationStatus(page);
   const alreadyApplied = handledStatus === 'Уже откликались' || handledStatus === 'Отклик уже отправлен';
   if (handledStatus && !alreadyApplied) {
-    console.log(`      ⏭️  Пропущено: ${handledStatus}`);
-    stats.skipped++;
+    skip(handledStatus);
     return;
   }
   const descriptionMatch = findExcludedTerm(details.description, excludedTerms);
   if (descriptionMatch) {
-    console.log(`      ⏭️  Пропущено по исключению: ${descriptionMatch}`);
-    stats.skipped++;
+    skip(`по исключению: ${descriptionMatch}`);
     return;
   }
   const location = checkLocationEligibility(
@@ -598,8 +603,7 @@ async function processVacancy(
     details.location.workFormats,
   );
   if (!location.eligible) {
-    console.log(`      ⏭️  Пропущено по локации: ${location.reason}`);
-    stats.skipped++;
+    skip(`по локации: ${location.reason}`);
     return;
   }
   console.log(`      📍 Локация: ${location.reason}`);
@@ -616,8 +620,7 @@ async function processVacancy(
 
     if (letter) console.log(`      📝 Письмо: ${letter.slice(0, 80)}...`);
     if (!letter) {
-      console.log(`      ⏭️  Пропущено: ${letterResult.reason ?? 'письмо не сгенерировано'}`);
-      stats.skipped++;
+      skip(letterResult.reason ?? 'письмо не сгенерировано');
       return;
     }
 
@@ -653,8 +656,7 @@ async function processVacancy(
       console.log('      ✅ Письмо прикреплено');
       stats.success++;
     } else {
-      console.log('      ⏭️  Письмо уже прикреплено или кнопка не найдена');
-      stats.skipped++;
+      skip('письмо уже прикреплено или кнопка не найдена');
     }
   } else {
     console.log('      📤 Отправляю отклик...');
@@ -664,8 +666,7 @@ async function processVacancy(
       console.log(`      ✅ Успех! (${result.reason})`);
       stats.success++;
     } else if (result.status === 'skipped') {
-      console.log(`      ⏭️  Пропущено: ${result.reason}`);
-      stats.skipped++;
+      skip(result.reason);
     } else {
       console.log(`      ❌ Ошибка: ${result.reason}`);
       stats.error++;
@@ -732,6 +733,8 @@ async function main(): Promise<void> {
 
   const stats = { success: 0, skipped: 0, error: 0 };
   const seenVacancies = new Set<string>();
+  const skippedKeys = loadSkippedKeys();
+  console.log(`🚫 Уже пропущенных ранее (авто-пропуск): ${skippedKeys.size}`);
 
   const browser = await chromium.launch({ headless: false, slowMo: 300 });
   const context = await browser.newContext({ storageState: SESSION_FILE });
@@ -752,6 +755,7 @@ async function main(): Promise<void> {
             await searchVacancies(page, query, pageNum, excludedTerms),
           ).filter((vacancy) => {
             const key = vacancyKey(vacancy.url);
+            if (skippedKeys.has(key)) return false;
             if (seenVacancies.has(key)) return false;
             seenVacancies.add(key);
             return true;

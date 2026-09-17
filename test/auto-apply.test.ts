@@ -16,6 +16,25 @@ import { findExcludedTerm } from '../src/exclusions.ts';
 import { saveCoverLetter, loadCachedCoverLetter } from '../src/letters.ts';
 import { cleanCoverLetter } from '../src/llm.ts';
 import { checkLocationEligibility, parseVacancyLocation } from '../src/vacancy-location.ts';
+import { loadSkippedKeys, addSkippedKey } from '../src/skip-state.ts';
+
+test('persists skipped vacancy keys across calls', () => {
+  const original = process.env.CONFIG_DIR;
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hh-skip-'));
+  process.env.CONFIG_DIR = dir;
+  try {
+    assert.equal(loadSkippedKeys().size, 0);
+    addSkippedKey('id:123');
+    addSkippedKey('id:456');
+    const keys = loadSkippedKeys();
+    assert.equal(keys.size, 2);
+    assert.ok(keys.has('id:123'));
+    assert.ok(keys.has('id:456'));
+  } finally {
+    if (original === undefined) delete process.env.CONFIG_DIR;
+    else process.env.CONFIG_DIR = original;
+  }
+});
 
 test('normalizes vacancy URLs and removes tracking parameters', () => {
   assert.equal(normalizeVacancyUrl('/vacancy/123?hhtmFrom=search#details'), 'https://hh.ru/vacancy/123');
