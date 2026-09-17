@@ -579,7 +579,7 @@ async function processVacancy(
   }
 
   const handledStatus = await getHandledApplicationStatus(page);
-  const alreadyApplied = handledStatus === 'Вы уже откликались на эту вакансию';
+  const alreadyApplied = handledStatus === 'Уже откликались' || handledStatus === 'Отклик уже отправлен';
   if (handledStatus && !alreadyApplied) {
     console.log(`      ⏭️  Пропущено: ${handledStatus}`);
     stats.skipped++;
