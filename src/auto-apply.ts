@@ -580,10 +580,18 @@ async function processVacancy(
     stats.skipped++;
   };
 
-  const titleMatch = findExcludedTerm(`${title}\n${employer}`, excludedTerms);
-  if (titleMatch) {
-    skip(`по исключению: ${titleMatch}`);
-    return;
+  if (!automation.generateOnly) {
+    const titleMatch = findExcludedTerm(`${title}\n${employer}`, excludedTerms);
+    if (titleMatch) {
+      skip(`по исключению: ${titleMatch}`);
+      return;
+    }
+
+    const descriptionMatch = findExcludedTerm(details.description, excludedTerms);
+    if (descriptionMatch) {
+      skip(`по исключению: ${descriptionMatch}`);
+      return;
+    }
   }
 
   const handledStatus = await getHandledApplicationStatus(page);
@@ -591,11 +599,6 @@ async function processVacancy(
   if (handledStatus && !alreadyApplied) {
     // Status-based outcomes (rejected, withdrawn) are re-detected by HH each run; no need to persist.
     skip(handledStatus, false);
-    return;
-  }
-  const descriptionMatch = findExcludedTerm(details.description, excludedTerms);
-  if (descriptionMatch) {
-    skip(`по исключению: ${descriptionMatch}`);
     return;
   }
   const location = checkLocationEligibility(
