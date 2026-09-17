@@ -38,6 +38,7 @@ export interface AutomationConfig {
   llmMaxTokens: number;
   mode: ApplyMode;
   dryRun: boolean;
+  generateOnly: boolean;
 }
 
 const PROVIDER_PRESETS: Record<LlmProvider, { baseURL: string; defaultModel: string; envKey: string; requiresKey: boolean }> = {
@@ -178,6 +179,7 @@ export function getAutomationConfig(): AutomationConfig {
     llmMaxTokens: readNumber('LLM_MAX_TOKENS', 1_024, 1),
     mode: readApplyMode(),
     dryRun: readDryRun(),
+    generateOnly: process.argv.includes('--generate'),
   };
 }
 

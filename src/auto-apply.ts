@@ -569,7 +569,7 @@ async function processVacancy(
   vacancy.employer = details.employer || vacancy.employer;
   const { title, employer } = vacancy;
 
-  console.log(`\n  [${index + 1}/${total}] ${title.slice(0, 50)}...`);
+  console.log(`\n  [${index + 1}/${total}] ${title.slice(0, 50)}... ${vacancy.url}`);
   console.log(`      Компания: ${employer}`);
 
   const titleMatch = findExcludedTerm(`${title}\n${employer}`, excludedTerms);
@@ -602,17 +602,14 @@ async function processVacancy(
     stats.skipped++;
     return;
   }
-  console.log(`      Link: ${vacancy.url}`);
   console.log(`      📍 Локация: ${location.reason}`);
 
   console.log('      💬 Генерирую письмо...');
   let letter = '';
-  const cached = loadCachedCoverLetter(vacancy);
+  const cached = automation.generateOnly ? undefined : loadCachedCoverLetter(vacancy);
   if (cached) {
     letter = cached;
     console.log('      ♻️  Используется сохранённое письмо из letters/');
-  } else if (automation.dryRun) {
-    console.log('      🧪 Dry-run: письмо не сгенерировано и не отправлено');
   } else {
     const letterResult = await generateCoverLetter(title, employer, details.description);
     letter = letterResult.text;
@@ -633,6 +630,12 @@ async function processVacancy(
       stats.error++;
       return;
     }
+  }
+
+  if (automation.generateOnly) {
+    console.log('      🧪 Режим --generate: только письмо, отклик не отправляется');
+    stats.success++;
+    return;
   }
 
   if (automation.dryRun) {
@@ -725,6 +728,7 @@ async function main(): Promise<void> {
   console.log(`🚫 Исключения: ${excludedTerms.length}`);
   console.log(`⚙️  Режим: ${mode}`);
   if (automation.dryRun) console.log('🧪 Dry-run: письма и отклики не отправляются');
+  if (automation.generateOnly) console.log('✍️  Режим --generate: только генерация/перегенерация письма');
 
   const stats = { success: 0, skipped: 0, error: 0 };
   const seenVacancies = new Set<string>();
