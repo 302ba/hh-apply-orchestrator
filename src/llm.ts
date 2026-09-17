@@ -196,8 +196,12 @@ ${profile}
 
   const { llmRetries, llmMaxTokens } = getAutomationConfig();
   const sampling = getLlmSampling();
+  const parts: string[] = [];
   for (let attempt = 1; attempt <= llmRetries; attempt++) {
     try {
+      const currentPrompt = parts.length > 0
+        ? `Продолжи письмо с того места, где оно оборвалось. Не повторяй уже написанное, начни сразу с продолжения:\n\n${parts[parts.length - 1].slice(-300)}`
+        : prompt;
       if (usesMessagesEndpoint(provider, model)) {
         const response = await buildAnthropicClient().messages.create({
           model,
@@ -207,28 +211,34 @@ ${profile}
           temperature: sampling.temperature,
           top_p: sampling.topP,
           top_k: sampling.topK,
-          messages: [{ role: 'user', content: prompt }],
+          messages: [{ role: 'user', content: currentPrompt }],
         });
         const text = cleanCoverLetter(response.content
           .filter((block): block is Anthropic.TextBlock => block.type === 'text')
           .map((block) => block.text)
           .join('')
         );
-        if (text) return { text };
-
-        const blockTypes = response.content.map((block) => block.type).join(', ') || 'нет';
-        const tokenHint = response.stop_reason === 'max_tokens'
-          ? 'Лимит токенов исчерпан до финального текста'
-          : 'Финальный текст не был выдан';
-        return {
-          text: '',
-          reason: `Пустой ответ ${provider}/${model}: блоки [${blockTypes}], stop_reason=${response.stop_reason ?? 'не указан'}. ${tokenHint}`,
-        };
+        if (!text) {
+          const blockTypes = response.content.map((block) => block.type).join(', ') || 'нет';
+          const tokenHint = response.stop_reason === 'max_tokens'
+            ? 'Лимит токенов исчерпан до финального текста'
+            : 'Финальный текст не был выдан';
+          return {
+            text: '',
+            reason: `Пустой ответ ${provider}/${model}: блоки [${blockTypes}], stop_reason=${response.stop_reason ?? 'не указан'}. ${tokenHint}`,
+          };
+        }
+        parts.push(text);
+        if (response.stop_reason === 'max_tokens' && attempt < llmRetries) {
+          console.log(`  ⚠️  Письмо оборвано на лимите токенов, продолжаю (${attempt}/${llmRetries})...`);
+          continue;
+        }
+        return { text: parts.join('\n\n') };
       }
 
       const response = await buildClient().chat.completions.create({
         model,
-        messages: [{ role: 'user', content: prompt }],
+        messages: [{ role: 'user', content: currentPrompt }],
         max_tokens: llmMaxTokens,
         temperature: sampling.temperature,
         top_p: sampling.topP,
@@ -236,16 +246,22 @@ ${profile}
         presence_penalty: 0,
       });
       const text = cleanCoverLetter(response.choices[0]?.message?.content ?? '');
-      if (text) return { text };
-
-      const choice = response.choices[0];
-      const refusal = choice?.message?.refusal;
-      return {
-        text: '',
-        reason: refusal
-          ? `Провайдер отклонил запрос: ${refusal}`
-          : `Пустой ответ ${provider}/${model}: choices=${response.choices.length}, finish_reason=${choice?.finish_reason ?? 'не указан'}`,
-      };
+      if (!text) {
+        const choice = response.choices[0];
+        const refusal = choice?.message?.refusal;
+        return {
+          text: '',
+          reason: refusal
+            ? `Провайдер отклонил запрос: ${refusal}`
+            : `Пустой ответ ${provider}/${model}: choices=${response.choices.length}, finish_reason=${choice?.finish_reason ?? 'не указан'}`,
+        };
+      }
+      parts.push(text);
+      if (response.choices[0]?.finish_reason === 'length' && attempt < llmRetries) {
+        console.log(`  ⚠️  Письмо оборвано на лимите токенов, продолжаю (${attempt}/${llmRetries})...`);
+        continue;
+      }
+      return { text: parts.join('\n\n') };
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       if (attempt === llmRetries) {
