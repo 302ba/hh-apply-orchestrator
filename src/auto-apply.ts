@@ -674,8 +674,9 @@ async function processVacancy(
       console.log(`      ✅ Успех! (${result.reason})`);
       stats.success++;
     } else if (result.status === 'skipped') {
-      // applyToVacancy reports status-based skips (already applied, rejected) via getHandledApplicationStatus.
-      skip(result.reason, false);
+      // Manual skip (s) is a real user decision — persist. Status-based skips
+      // (already applied, rejected) come from getHandledApplicationStatus and are not.
+      skip(result.reason, result.reason === 'Пропущено вручную');
     } else {
       console.log(`      ❌ Ошибка: ${result.reason}`);
       stats.error++;
