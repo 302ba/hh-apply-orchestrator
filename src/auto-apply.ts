@@ -417,10 +417,11 @@ function answersToValues(
 async function waitForManualSubmission(page: Page): Promise<ApplyResult> {
   const rl = createInterface({ input, output });
   console.log('\n      ✋ Режим: отправь отклик вручную (включи вопросы, ответь, нажми Отправить).');
-  console.log('      ⏳ После отправки вернись сюда и нажми Enter...');
-  await rl.question('      ▶ ');
+  console.log('      ⏳ После отправки нажми Enter. Чтобы пропустить вакансию — введи s и нажми Enter.');
+  const answer = (await rl.question('      ▶ ')).trim().toLowerCase();
   rl.close();
   await page.waitForTimeout(1_000);
+  if (answer === 's' || answer === 'skip') return { status: 'skipped', reason: 'Пропущено вручную' };
   if (await responseConfirmed(page)) return { status: 'success', reason: 'Отправлено вручную' };
   return applicationFailureResult(page);
 }
