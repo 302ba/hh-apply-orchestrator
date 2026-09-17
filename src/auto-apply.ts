@@ -579,7 +579,8 @@ async function processVacancy(
   }
 
   const handledStatus = await getHandledApplicationStatus(page);
-  if (handledStatus) {
+  const alreadyApplied = handledStatus === 'Вы уже откликались на эту вакансию';
+  if (handledStatus && !alreadyApplied) {
     console.log(`      ⏭️  Пропущено: ${handledStatus}`);
     stats.skipped++;
     return;
@@ -641,18 +642,30 @@ async function processVacancy(
     return;
   }
 
-  console.log('      📤 Отправляю отклик...');
-  const result = await applyToVacancy(page, vacancy.url, letter, automation.mode === 'semi');
-
-  if (result.status === 'success') {
-    console.log(`      ✅ Успех! (${result.reason})`);
-    stats.success++;
-  } else if (result.status === 'skipped') {
-    console.log(`      ⏭️  Пропущено: ${result.reason}`);
-    stats.skipped++;
+  if (alreadyApplied) {
+    console.log('      📎 Уже откликались, пробую прикрепить письмо...');
+    const attached = await attachCoverLetterAfterApply(page, letter);
+    if (attached) {
+      console.log('      ✅ Письмо прикреплено');
+      stats.success++;
+    } else {
+      console.log('      ⏭️  Письмо уже прикреплено или кнопка не найдена');
+      stats.skipped++;
+    }
   } else {
-    console.log(`      ❌ Ошибка: ${result.reason}`);
-    stats.error++;
+    console.log('      📤 Отправляю отклик...');
+    const result = await applyToVacancy(page, vacancy.url, letter, automation.mode === 'semi');
+
+    if (result.status === 'success') {
+      console.log(`      ✅ Успех! (${result.reason})`);
+      stats.success++;
+    } else if (result.status === 'skipped') {
+      console.log(`      ⏭️  Пропущено: ${result.reason}`);
+      stats.skipped++;
+    } else {
+      console.log(`      ❌ Ошибка: ${result.reason}`);
+      stats.error++;
+    }
   }
 
   console.log(`      ⏳ Пауза ${automation.delayBetweenAppliesSeconds} сек...`);
