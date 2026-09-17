@@ -699,6 +699,16 @@ async function main(): Promise<void> {
 
   if (vacancyUrl) {
     console.log(`\n🔗 Режим одной вакансии: ${vacancyUrl}`);
+    if (!sessionExists()) {
+      console.log('\n❌ Сессия не найдена!');
+      console.log('   Сначала запусти: npm run login');
+      process.exit(1);
+    }
+    const llmCheck = getLlmConfig();
+    if (!llmCheck.apiKey || llmCheck.apiKey.startsWith('sk-replace') || llmCheck.apiKey === 'YOUR_OPENAI_API_KEY') {
+      console.log('\n❌ Ошибка: укажи API ключ для провайдера!');
+      process.exit(1);
+    }
   } else {
     const searchQueries = loadSearchQueries();
     assertConfigured(searchQueries, profile);
