@@ -190,8 +190,6 @@ function readDryRun(): boolean {
 export function readVacancyUrl(): string | undefined {
   const idx = process.argv.indexOf('--url');
   if (idx !== -1 && process.argv[idx + 1]) return process.argv[idx + 1];
-  const env = process.env.VACANCY_URL;
-  if (env && env.trim()) return env.trim();
   return undefined;
 }
 
