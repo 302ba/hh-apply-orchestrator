@@ -19,7 +19,7 @@ export interface ApplyResult {
   reason: string;
 }
 
-export type LlmProvider = 'openai' | 'openrouter' | 'opencode-go' | 'opencode-zen' | 'lmstudio' | 'ollama' | 'llamacpp';
+export type LlmProvider = 'openai' | 'openrouter' | 'opencode-go' | 'opencode-zen' | 'lmstudio' | 'ollama' | 'llamacpp' | 'antigravity';
 
 export interface LlmConfig {
   provider: LlmProvider;
@@ -84,6 +84,12 @@ const PROVIDER_PRESETS: Record<LlmProvider, { baseURL: string; defaultModel: str
     envKey: 'LLAMACPP_API_KEY',
     requiresKey: false,
   },
+  antigravity: {
+    baseURL: 'https://generativelanguage.googleapis.com/v1beta',
+    defaultModel: 'gemini-3.8-flash',
+    envKey: 'ANTIGRAVITY_API_KEY',
+    requiresKey: true,
+  },
 };
 
 function resolveProvider(): LlmProvider {
@@ -94,6 +100,7 @@ function resolveProvider(): LlmProvider {
   if (raw === 'lmstudio' || raw === 'lm-studio') return 'lmstudio';
   if (raw === 'ollama') return 'ollama';
   if (raw === 'llama.cpp' || raw === 'llama-cpp' || raw === 'llamacpp') return 'llamacpp';
+  if (raw === 'antigravity' || raw === 'agy' || raw === 'gemini') return 'antigravity';
   console.log(`⚠️  Unknown LLM_PROVIDER "${raw}", falling back to "openai"`);
   return 'openai';
 }
@@ -114,9 +121,13 @@ export function getLlmConfig(): LlmConfig {
   const preset = PROVIDER_PRESETS[provider];
 
   // Provider-specific key wins. For openai/openrouter, OPENAI_API_KEY is a real fallback.
-  // For local providers, a synthetic placeholder is enough unless the env supplies a real one.
+  // For antigravity, GEMINI_API_KEY is also accepted. For local providers, a placeholder suffices.
   const providerSpecific = process.env[preset.envKey];
-  const fallback = provider === 'openai' ? (process.env.OPENAI_API_KEY ?? '') : '';
+  const fallback = provider === 'openai'
+    ? (process.env.OPENAI_API_KEY ?? '')
+    : provider === 'antigravity'
+      ? (process.env.GEMINI_API_KEY ?? '')
+      : '';
   let apiKey = providerSpecific ?? fallback ?? '';
   if (!apiKey && !preset.requiresKey) apiKey = 'local';
 

@@ -22,7 +22,7 @@ const RESUME_MODE_PROMPT = `/no_think
 
 Я хочу получить короткое, естественное и персонализированное письмо, которое не выглядит сгенерированным ИИ.
 
-Не выдумывай никакие факты.
+Не выдумывай никакие факты и не приписывай то, чего нет в резюме.
 
 ### МОИ ПАРАМЕТРЫ
 
@@ -73,7 +73,46 @@ function buildAnthropicClient() {
 }
 
 function usesMessagesEndpoint(provider: string, model: string): boolean {
-  return provider === 'opencode-go' && /^(?:qwen|minimax-m)/i.test(model);
+  return provider === 'opencode-go' && /^(?:qwen|minimax-m|mimo)/i.test(model);
+}
+
+async function callAntigravity(
+  system: string,
+  userPrompt: string,
+  _maxTokens: number,
+): Promise<string> {
+  const { apiKey, baseURL, model } = getLlmConfig();
+  const url = `${baseURL}/interactions`;
+  const body: Record<string, unknown> = { model, input: userPrompt };
+  if (system) body.system_instruction = system;
+
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-goog-api-key': apiKey,
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (!res.ok) {
+    const body = await res.text().catch(() => '');
+    throw new Error(`Antigravity HTTP ${res.status}: ${body}`);
+  }
+
+  interface AntigravityStep {
+    type: string;
+    content?: Array<{ type: string; text?: string }>;
+  }
+  const data = await res.json() as { steps?: AntigravityStep[] };
+  // Response shape: { steps: [{ type: "thought" }, { type: "model_output", content: [{ type: "text", text: "..." }] }] }
+  const text = (data.steps ?? [])
+    .filter((s) => s.type === 'model_output')
+    .flatMap((s) => s.content ?? [])
+    .filter((c) => c.type === 'text')
+    .map((c) => c.text ?? '')
+    .join('');
+  return text.trim();
 }
 
 const COVER_LETTER_SYSTEM_PROMPT = `Ты — профессиональный карьерный консультант и редактор сопроводительных писем.
@@ -97,6 +136,7 @@ const COVER_LETTER_SYSTEM_PROMPT = `Ты — профессиональный к
 * Письмо должно выглядеть написанным человеком, а не шаблонным текстовым генератором.
 * Не используй чрезмерно формальный, канцелярский или восторженный стиль.
 * Не используй клише вроде:
+  "Откликаюсь на" или "Откликнулся на",
   «с большим интересом ознакомился с вашей вакансией»,
   «буду рад стать частью вашей команды»,
   «ваша компания является лидером рынка»,
@@ -111,7 +151,6 @@ const COVER_LETTER_SYSTEM_PROMPT = `Ты — профессиональный к
 * Не используй слишком длинные предложения.
 * Избегай искусственного корпоративного языка.
 * Пиши конкретно, естественно и уверенно.
-* Не начинай письмо с "Откликаюсь на позицию".
 
 СТРУКТУРА:
 
@@ -129,7 +168,7 @@ const COVER_LETTER_SYSTEM_PROMPT = `Ты — профессиональный к
 СТИЛЬ:
 
 Пиши естественным современным языком.
-Тон — профессиональный, уверенный и спокойный.
+Тон - профессиональный, уверенный и спокойный.
 Не пытайся звучать «слишком умно».
 Не используй эмодзи.
 Не добавляй заголовок «Сопроводительное письмо», если пользователь этого не просил.
@@ -236,6 +275,20 @@ ${profile}
         return { text: parts.join('\n\n') };
       }
 
+      if (provider === 'antigravity') {
+        const text = cleanCoverLetter(await callAntigravity(system, currentPrompt, llmMaxTokens));
+        if (!text) {
+          return {
+            text: '',
+            reason: `Пустой ответ ${provider}/${model}`,
+          };
+        }
+        parts.push(text);
+        // The /interactions endpoint doesn't surface a finish_reason,
+        // so only retry continuation if the response looks cut off.
+        return { text: parts.join('\n\n') };
+      }
+
       const response = await buildClient().chat.completions.create({
         model,
         messages: [
@@ -336,7 +389,9 @@ ${input.questions
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {
       let content: string | undefined;
-      if (usesMessagesEndpoint(provider, model)) {
+      if (provider === 'antigravity') {
+        content = await callAntigravity(QUESTIONNAIRE_SYSTEM_PROMPT, userPrompt, llmMaxTokens);
+      } else if (usesMessagesEndpoint(provider, model)) {
         const response = await buildAnthropicClient().messages.create({
           model,
           thinking: { type: 'disabled' },
