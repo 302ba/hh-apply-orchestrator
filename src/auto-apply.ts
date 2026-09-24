@@ -340,20 +340,42 @@ async function fillCoverLetter(
   page: Page,
   message: string,
 ): Promise<boolean> {
-  // The textarea is only present after clicking "Добавить" near "Сопроводительное письмо".
-  const addBtn = page
-    .locator("button:has-text('Добавить'), a:has-text('Добавить')")
-    .filter({ has: page.locator("xpath=ancestor::*[contains(., 'сопроводительное письмо') or contains(., 'Сопроводительное письмо')]") })
-    .first();
-  if ((await addBtn.count()) > 0) {
-    await addBtn.click();
-    await page.waitForTimeout(1_000);
+  const letterAreaSelector = "textarea[data-qa='vacancy-response-popup-form-letter-input']";
+
+  // Fast path: textarea already visible (some popups open it directly).
+  let letterArea = page.locator(letterAreaSelector).first();
+  if ((await letterArea.count()) === 0) {
+    // Look for an "Добавить" button that lives inside a cover-letter block.
+    // We can't use ancestor:: XPath inside .filter({ has }), so we find all
+    // such buttons and pick the one whose closest container mentions "письмо".
+    const addBtns = await page
+      .locator("button:has-text('Добавить'), a:has-text('Добавить')")
+      .all();
+    for (const btn of addBtns) {
+      try {
+        // Walk up to the nearest section-level ancestor and check its text.
+        const parentText: string = await btn.evaluate((el) => {
+          let node = el.parentElement;
+          for (let i = 0; i < 6 && node; i++, node = node.parentElement) {
+            const t = node.textContent ?? '';
+            if (/сопроводительное\s+письмо/i.test(t)) return t;
+          }
+          return '';
+        });
+        if (parentText) {
+          await btn.click();
+          await page.waitForTimeout(1_000);
+          break;
+        }
+      } catch {
+        // ignore stale/hidden elements
+      }
+    }
+
+    letterArea = page.locator(letterAreaSelector).first();
+    if ((await letterArea.count()) === 0) return false;
   }
 
-  const letterArea = page
-    .locator("textarea[data-qa='vacancy-response-popup-form-letter-input']")
-    .first();
-  if ((await letterArea.count()) === 0) return false;
   await letterArea.fill(message);
   await page.waitForTimeout(500);
   return true;
@@ -508,7 +530,15 @@ async function applyToVacancy(page: Page, url: string, message: string, semiAuto
         await applyBtn.click();
         await page.waitForTimeout(3_000);
 
-        if (message) await fillCoverLetter(page, message);
+        if (message) {
+          const filled = await fillCoverLetter(page, message);
+          if (!filled) {
+            console.log('      ⚠️  Поле письма не найдено — вставь вручную:');
+            console.log('      ---');
+            console.log(message);
+            console.log('      ---');
+          }
+        }
         return waitForManualSubmission(page);
       }
       console.log("      🔍 Жму основную кнопку 'Откликнуться'");
