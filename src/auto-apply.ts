@@ -307,7 +307,11 @@ async function dismissRelocationWarning(page: Page): Promise<void> {
 
 async function attachCoverLetterAfterApply(page: Page, letter: string): Promise<boolean> {
   if (!letter) return false;
-  const attachBtn = page.locator("[data-qa='responded-success-attach-cover-letter']").first();
+  const attachBtn = page
+    .locator(
+      "[data-qa='responded-success-attach-cover-letter'], [data-qa='responded-success-attach-cover-letter-text'], button:has-text('Приложить сопроводительное'), button:has-text('Добавить сопроводительное'), a:has-text('Приложить сопроводительное')",
+    )
+    .first();
   if ((await attachBtn.count()) === 0) return false;
 
   console.log('      📎 Нашёл кнопку «Приложить сопроводительное письмо», прикрепляю...');
@@ -316,7 +320,9 @@ async function attachCoverLetterAfterApply(page: Page, letter: string): Promise<
 
   // The popup contains the cover letter textarea directly. No "Добавить" step needed.
   const letterArea = page
-    .locator("textarea[data-qa='vacancy-response-popup-form-letter-input']")
+    .locator(
+      "textarea[data-qa='vacancy-response-popup-form-letter-input'], textarea[data-qa='vacancy-response-letter-input'], textarea[name='text'], textarea",
+    )
     .first();
   if ((await letterArea.count()) === 0) {
     console.log('      ⚠️  Поле письма в попапе не найдено');
@@ -325,7 +331,11 @@ async function attachCoverLetterAfterApply(page: Page, letter: string): Promise<
   await letterArea.fill(letter);
   await page.waitForTimeout(500);
 
-  const submit = page.locator("[data-qa='vacancy-response-letter-submit']").first();
+  const submit = page
+    .locator(
+      "[data-qa='vacancy-response-letter-submit'], [data-qa='vacancy-response-submit-popup'], button:has-text('Отправить'), button:has-text('Прикрепить')",
+    )
+    .first();
   if ((await submit.count()) === 0) {
     console.log('      ⚠️  Кнопка «Отправить» в попапе не найдена');
     return false;
@@ -340,35 +350,47 @@ async function fillCoverLetter(
   page: Page,
   message: string,
 ): Promise<boolean> {
-  const letterAreaSelector = "textarea[data-qa='vacancy-response-popup-form-letter-input']";
+  const letterAreaSelector =
+    "textarea[data-qa='vacancy-response-popup-form-letter-input'], textarea[data-qa='vacancy-response-letter-input'], textarea[name='text'], textarea";
 
   // Fast path: textarea already visible (some popups open it directly).
   let letterArea = page.locator(letterAreaSelector).first();
   if ((await letterArea.count()) === 0) {
-    // Look for an "Добавить" button that lives inside a cover-letter block.
-    // We can't use ancestor:: XPath inside .filter({ has }), so we find all
-    // such buttons and pick the one whose closest container mentions "письмо".
-    const addBtns = await page
-      .locator("button:has-text('Добавить'), a:has-text('Добавить')")
-      .all();
-    for (const btn of addBtns) {
-      try {
-        // Walk up to the nearest section-level ancestor and check its text.
-        const parentText: string = await btn.evaluate((el) => {
-          let node = el.parentElement;
-          for (let i = 0; i < 6 && node; i++, node = node.parentElement) {
-            const t = node.textContent ?? '';
-            if (/сопроводительное\s+письмо/i.test(t)) return t;
+    // 1. Look for explicit attach / toggle cover letter buttons (including post-apply attach button)
+    const directLetterBtn = page
+      .locator(
+        "[data-qa='responded-success-attach-cover-letter'], [data-qa='responded-success-attach-cover-letter-text'], [data-qa='vacancy-response-popup-form-letter-toggle'], button:has-text('Приложить сопроводительное'), button:has-text('Добавить сопроводительное'), button:has-text('Написать сопроводительное'), a:has-text('Приложить сопроводительное'), a:has-text('Написать сопроводительное')",
+      )
+      .first();
+
+    if ((await directLetterBtn.count()) > 0) {
+      console.log('      📎 Нашёл кнопку добавления сопроводительного письма, нажимаю...');
+      await directLetterBtn.click();
+      await page.waitForTimeout(2_000);
+    } else {
+      // 2. Look for a button that lives inside a cover-letter block.
+      const addBtns = await page
+        .locator("button:has-text('Добавить'), a:has-text('Добавить'), button:has-text('Написать'), a:has-text('Написать')")
+        .all();
+      for (const btn of addBtns) {
+        try {
+          // Walk up to the nearest section-level ancestor and check its text.
+          const parentText: string = await btn.evaluate((el) => {
+            let node = el.parentElement;
+            for (let i = 0; i < 6 && node; i++, node = node.parentElement) {
+              const t = node.textContent ?? '';
+              if (/сопроводительное\s+письмо/i.test(t)) return t;
+            }
+            return '';
+          });
+          if (parentText) {
+            await btn.click();
+            await page.waitForTimeout(1_000);
+            break;
           }
-          return '';
-        });
-        if (parentText) {
-          await btn.click();
-          await page.waitForTimeout(1_000);
-          break;
+        } catch {
+          // ignore stale/hidden elements
         }
-      } catch {
-        // ignore stale/hidden elements
       }
     }
 
@@ -529,10 +551,13 @@ async function applyToVacancy(page: Page, url: string, message: string, semiAuto
         console.log("      🔍 Жму основную кнопку 'Откликнуться'");
         await applyBtn.click();
         await page.waitForTimeout(3_000);
+        await dismissRelocationWarning(page);
 
         if (message) {
           const filled = await fillCoverLetter(page, message);
-          if (!filled) {
+          if (filled) {
+            console.log('      ✍️  Письмо заполнено в форме.');
+          } else {
             console.log('      ⚠️  Поле письма не найдено — вставь вручную:');
             console.log('      ---');
             console.log(message);
@@ -544,6 +569,18 @@ async function applyToVacancy(page: Page, url: string, message: string, semiAuto
       console.log("      🔍 Жму основную кнопку 'Откликнуться'");
       await applyBtn.click();
       await page.waitForTimeout(3_000);
+      await dismissRelocationWarning(page);
+
+      // Если отклик подтвердился сразу (быстрый отклик в 1 клик):
+      if (await responseConfirmed(page)) {
+        if (message) {
+          const attached = await attachCoverLetterAfterApply(page, message);
+          if (attached) {
+            return { status: 'success', reason: 'С письмом (после отклика)' };
+          }
+        }
+        return { status: 'success', reason: 'Без письма' };
+      }
 
       let letterFilled = false;
       if (message) letterFilled = await fillCoverLetter(page, message);
@@ -551,7 +588,7 @@ async function applyToVacancy(page: Page, url: string, message: string, semiAuto
       if (letterFilled) {
         const submitBtn = page
           .locator(
-            "button:has-text('Отправить'), button:has-text('Откликнуться'), button:has-text('Отправить письмо'), button[type='submit']",
+            "button:has-text('Отправить'), button:has-text('Откликнуться'), button:has-text('Отправить письмо'), button[data-qa='vacancy-response-letter-submit'], button[data-qa='vacancy-response-submit-popup'], button[type='submit']",
           )
           .first();
         if ((await submitBtn.count()) > 0) {
@@ -573,7 +610,9 @@ async function applyToVacancy(page: Page, url: string, message: string, semiAuto
         }
       }
 
-      if (await responseConfirmed(page)) return { status: 'success', reason: 'Без письма' };
+      if (await responseConfirmed(page)) {
+        return resultAfterSubmit(page, 'Без предварительного письма', message);
+      }
 
       return applicationFailureResult(page);
     }
@@ -610,6 +649,28 @@ async function processVacancy(
     stats.skipped++;
   };
 
+  const handledStatus = await getHandledApplicationStatus(page);
+  const alreadyApplied = handledStatus === 'Уже откликались' || handledStatus === 'Отклик уже отправлен';
+  if (handledStatus && !alreadyApplied) {
+    // Status-based outcomes (rejected, withdrawn) are re-detected by HH each run; no need to persist.
+    skip(handledStatus, false);
+    return;
+  }
+
+  if (!automation.generateOnly) {
+    const location = checkLocationEligibility(
+      details.location,
+      profile.onsite_cities,
+      details.location.workFormats,
+    );
+    if (!location.eligible) {
+      // Location is deterministic from profile.md — re-detected every run, no persist.
+      skip(`по локации: ${location.reason}`, false);
+      return;
+    }
+    console.log(`      📍 Локация: ${location.reason}`);
+  }
+
   if (!automation.generateOnly) {
     const titleMatch = findExcludedTerm(`${title}\n${employer}`, excludedTerms);
     if (titleMatch) {
@@ -623,27 +684,6 @@ async function processVacancy(
       skip(`по исключению: ${descriptionMatch}`, false);
       return;
     }
-  }
-
-  const handledStatus = await getHandledApplicationStatus(page);
-  const alreadyApplied = handledStatus === 'Уже откликались' || handledStatus === 'Отклик уже отправлен';
-  if (handledStatus && !alreadyApplied) {
-    // Status-based outcomes (rejected, withdrawn) are re-detected by HH each run; no need to persist.
-    skip(handledStatus, false);
-    return;
-  }
-  if (!automation.generateOnly) {
-    const location = checkLocationEligibility(
-      details.location,
-      profile.onsite_cities,
-      details.location.workFormats,
-    );
-    if (!location.eligible) {
-      // Location is deterministic from profile.md — re-detected every run, no persist.
-      skip(`по локации: ${location.reason}`, false);
-      return;
-    }
-    console.log(`      📍 Локация: ${location.reason}`);
   }
 
   console.log('      💬 Генерирую письмо...');

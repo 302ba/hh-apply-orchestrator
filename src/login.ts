@@ -16,8 +16,11 @@ async function login(): Promise<void> {
   const browser = await chromium.launch({ headless: false });
   const context: BrowserContext = await browser.newContext();
   const page = await context.newPage();
-
-  await page.goto('https://hh.ru/login');
+  try {
+    await page.goto('https://hh.ru/login', { waitUntil: 'domcontentloaded', timeout: 60_000 });
+  } catch (err) {
+    console.warn('⚠️  Страница загружается дольше обычного, но окно браузера открыто. Продолжай вход.');
+  }
 
   console.log('\n📌 Инструкция:');
   console.log('1. В открывшемся браузере войди в свой аккаунт HH.ru');
