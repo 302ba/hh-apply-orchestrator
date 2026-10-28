@@ -163,7 +163,7 @@ async function searchVacancies(
       return [];
     }
 
-    const cards = await page.locator("[data-qa='vacancy-serp__vacancy']").all();
+    const cards = await page.locator("[data-qa='vacancy-serp__vacancy']").filter({ has: page.locator("[data-qa='vacancy-serp__vacancy_response']") }).all();
     if (cards.length === 0) return [];
 
     const vacancies: Vacancy[] = [];
@@ -633,21 +633,31 @@ async function processVacancy(
   total: number,
 ): Promise<void> {
   const profile = loadProfile();
-
-  const details = await getVacancyDetails(page, vacancy.url);
-  vacancy.title = details.title || vacancy.title;
-  vacancy.employer = details.employer || vacancy.employer;
-  const { title, employer } = vacancy;
   const key = vacancyKey(vacancy.url);
-
-  console.log(`\n  [${index + 1}/${total}] ${title.slice(0, 50)}... ${vacancy.url}`);
-  console.log(`      Компания: ${employer}`);
 
   const skip = (reason: string, persist = true): void => {
     console.log(`      ⏭️  Пропущено: ${reason}`);
     if (persist && !automation.generateOnly) addSkippedKey(key);
     stats.skipped++;
   };
+
+  if (!automation.generateOnly && (vacancy.title || vacancy.employer)) {
+    const titleMatch = findExcludedTerm(`${vacancy.title}\n${vacancy.employer}`, excludedTerms);
+    if (titleMatch) {
+      console.log(`\n  [${index + 1}/${total}] ${(vacancy.title || 'Вакансия').slice(0, 50)}... ${vacancy.url}`);
+      console.log(`      Компания: ${vacancy.employer || 'Компания'}`);
+      skip(`по исключению: ${titleMatch}`, false);
+      return;
+    }
+  }
+
+  const details = await getVacancyDetails(page, vacancy.url);
+  vacancy.title = details.title || vacancy.title;
+  vacancy.employer = details.employer || vacancy.employer;
+  const { title, employer } = vacancy;
+
+  console.log(`\n  [${index + 1}/${total}] ${title.slice(0, 50)}... ${vacancy.url}`);
+  console.log(`      Компания: ${employer}`);
 
   const handledStatus = await getHandledApplicationStatus(page);
   const alreadyApplied = handledStatus === 'Уже откликались' || handledStatus === 'Отклик уже отправлен';

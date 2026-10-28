@@ -21,6 +21,7 @@ function write(level: string, args: unknown[]): void {
   fs.mkdirSync(path.dirname(LOG_FILE), { recursive: true });
   const message = args.map(formatArgument).join(' ');
   fs.appendFileSync(LOG_FILE, `${new Date().toISOString()} [${level}] ${message}\n`, 'utf8');
+  console.log(`${new Date().toISOString()} [${level}] ${message}`);
 }
 
 export const fileConsole = {
