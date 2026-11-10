@@ -1,10 +1,11 @@
-import { chromium, type Page } from 'playwright';
+import { chromium, type Page, type BrowserContext } from 'playwright';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createInterface } from 'node:readline/promises';
 import { stdin as input, stdout as output } from 'node:process';
 import {
   SESSION_FILE,
+  ensureSessionDir,
   getAutomationConfig,
   getLlmConfig,
   sessionExists,
@@ -139,11 +140,48 @@ function assertConfigured(searchQueries: string[], profile: ProfileDoc): void {
     console.log(`   Открой ${PROFILE_FILE} и замени YOUR_* на свои данные.`);
     process.exit(1);
   }
-  if (!sessionExists()) {
-    console.log('\n❌ Сессия не найдена!');
-    console.log('   Сначала запусти: npm run login');
-    process.exit(1);
+}
+
+async function isSessionActive(page: Page): Promise<boolean> {
+  if (!sessionExists()) return false;
+  try {
+    await gotoWithRetry(page, `${HH_BASE_URL}/applicant/resumes`, 20_000, 2);
+    const isLoginPage = page.url().includes('/login') || (await page.locator("[data-qa*='mainmenu_loginButton']").count()) > 0;
+    return !isLoginPage;
+  } catch {
+    return false;
   }
+}
+
+async function ensureAuthenticated(page: Page, context: BrowserContext): Promise<void> {
+  const active = await isSessionActive(page);
+  if (active) {
+    console.log('🔐 Сессия HH.ru активна');
+    return;
+  }
+
+  console.log('\n' + '='.repeat(50));
+  console.log('⚠️  Сессия HH.ru истекла или отсутствует');
+  console.log('🔐 Открываю страницу входа: https://hh.ru/login');
+  console.log('📌 Инструкция:');
+  console.log('   1. В открывшемся окне браузера войди в свой аккаунт');
+  console.log('   2. Дождись загрузки личного кабинета');
+  console.log('   3. Вернись сюда и нажми Enter');
+  console.log('='.repeat(50) + '\n');
+
+  try {
+    await gotoWithRetry(page, `${HH_BASE_URL}/login`, 60_000, 2);
+  } catch {
+    console.warn('⚠️  Страница логина загружается дольше обычного, окно открыто.');
+  }
+
+  const rl = createInterface({ input, output });
+  await rl.question('✅ Нажми Enter когда залогинился...\n');
+  rl.close();
+
+  ensureSessionDir();
+  await context.storageState({ path: SESSION_FILE });
+  console.log(`💾 Сессия сохранена в ${SESSION_FILE}\n`);
 }
 
 async function searchVacancies(
@@ -153,6 +191,7 @@ async function searchVacancies(
   excludedTerms: string[] = [],
 ): Promise<Vacancy[]> {
   const url = buildSearchUrl(query, pageNum, excludedTerms);
+  console.log(`Query: ${url}`);
 
   try {
     await gotoWithRetry(page, url, 30_000, getAutomationConfig().readRetries);
@@ -163,13 +202,26 @@ async function searchVacancies(
       return [];
     }
 
-    const cards = await page.locator("[data-qa='vacancy-serp__vacancy']").filter({ has: page.locator("[data-qa='vacancy-serp__vacancy_response']") }).all();
+    const cards = await page
+      .locator("[data-qa='vacancy-serp__vacancy']")
+      .filter({
+        has: page.locator("[data-qa='vacancy-serp__vacancy_response']:visible"),
+      })
+      .filter({
+        hasNot: page.locator(
+          "[data-qa='vacancy-serp__vacancy_discard'], [data-qa='vacancy-serp__vacancy_responded'], [data-qa='vacancy-serp__vacancy_invited'], [data-qa='vacancy-serp__vacancy_archived']",
+        ),
+      })
+      .all();
     if (cards.length === 0) return [];
 
     const vacancies: Vacancy[] = [];
 
     for (const card of cards) {
       try {
+        const isDiscarded = (await card.locator("[data-qa='vacancy-serp__vacancy_discard']").count()) > 0;
+        const isAlreadyResponded = (await card.locator("[data-qa='vacancy-serp__vacancy_responded']").count()) > 0;
+        if (isDiscarded || isAlreadyResponded) continue;
         const titleLocator = card.locator("[data-qa='serp-item__title']").first();
         await titleLocator.waitFor({ state: 'visible', timeout: 5_000 });
 
@@ -799,11 +851,6 @@ async function main(): Promise<void> {
 
   if (vacancyUrl) {
     console.log(`\n🔗 Режим одной вакансии: ${vacancyUrl}`);
-    if (!sessionExists()) {
-      console.log('\n❌ Сессия не найдена!');
-      console.log('   Сначала запусти: npm run login');
-      process.exit(1);
-    }
     const llmCheck = getLlmConfig();
     if (!llmCheck.apiKey || llmCheck.apiKey.startsWith('sk-replace') || llmCheck.apiKey === 'YOUR_OPENAI_API_KEY') {
       console.log('\n❌ Ошибка: укажи API ключ для провайдера!');
@@ -830,10 +877,11 @@ async function main(): Promise<void> {
   console.log(`🚫 Уже пропущенных ранее (авто-пропуск): ${skippedKeys.size}`);
 
   const browser = await chromium.launch({ headless: false, slowMo: 300 });
-  const context = await browser.newContext({ storageState: SESSION_FILE });
+  const context = await browser.newContext(sessionExists() ? { storageState: SESSION_FILE } : {});
   const page = await context.newPage();
 
   try {
+    await ensureAuthenticated(page, context);
     if (vacancyUrl) {
       await processSingleVacancy(page, vacancyUrl, excludedTerms, automation, stats);
     } else {
