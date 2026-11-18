@@ -247,11 +247,9 @@ async function searchVacancies(
   }
 }
 
-async function getVacancyDetails(page: Page, url: string): Promise<VacancyDetails> {
+export async function getVacancyDetails(page: Page, url: string): Promise<VacancyDetails> {
   try {
     await gotoWithRetry(page, url, 15_000, getAutomationConfig().readRetries);
-    const jsonLdScripts = await page.locator("script[type='application/ld+json']").allTextContents();
-    const sourceHtml = await page.content();
 
     let title = '';
     try {
@@ -267,17 +265,36 @@ async function getVacancyDetails(page: Page, url: string): Promise<VacancyDetail
 
     let description = '';
     try {
-      await page.waitForSelector("[data-qa='vacancy-description']", { timeout: 10_000 });
+      await page.waitForSelector("[data-qa='vacancy-description'], [data-qa='main-content'], h1", { timeout: 10_000 });
       const desc = page.locator("[data-qa='vacancy-description']").first();
       if ((await desc.count()) > 0) description = await desc.innerText();
     } catch {
       // Location data can still be available in JSON-LD when description markup changes.
     }
 
+    const jsonLdScripts = await page.locator("script[type='application/ld+json']").allTextContents();
+    const sourceHtml = await page.content();
+
     let workFormatText = '';
     try {
       const formatEl = page.locator("[data-qa='work-formats-text'], [data-qa='work-format-text'], [data-qa='vacancy-view-work-format'], [data-qa='vacancy-view-work-formats']").first();
-      if ((await formatEl.count()) > 0) workFormatText = (await formatEl.innerText()).trim();
+      if ((await formatEl.count()) > 0) {
+        workFormatText = (await formatEl.innerText()).trim();
+      }
+
+      if (!workFormatText) {
+        const partsText = await page.evaluate(() => {
+          const parts = Array.from(document.querySelectorAll('div[class*="parts--"], [data-qa="main-content"] p'));
+          for (const el of parts) {
+            const text = (el as HTMLElement).innerText || '';
+            if (/\b(?:удалённо|удаленно|гибрид|на месте работодателя)\b/i.test(text)) {
+              return text;
+            }
+          }
+          return '';
+        }).catch(() => '');
+        if (partsText) workFormatText = partsText;
+      }
     } catch {}
 
     return { title, employer, description, location: parseVacancyLocation(jsonLdScripts, sourceHtml, workFormatText) };

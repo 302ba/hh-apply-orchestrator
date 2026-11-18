@@ -80,6 +80,10 @@ function hasRemoteWorkFormat(sourceHtml: string, domWorkFormatText = ''): boolea
     return true;
   }
 
+  if (/["'](?:vacancy-label-)?work-schedule-remote["']/i.test(sourceHtml)) {
+    return true;
+  }
+
   const formatTextMatch = sourceHtml.match(/data-qa=["'](?:work-formats?(?:-text)?|vacancy-view-work-formats?)["'][^>]*>([\s\S]*?)<\/(?:div|span|dl|dd)>/i);
   if (formatTextMatch && /удал(?:ен|ён)|remote|telecommute/i.test(formatTextMatch[1])) {
     return true;
@@ -88,6 +92,14 @@ function hasRemoteWorkFormat(sourceHtml: string, domWorkFormatText = ''): boolea
   const ddRemoteMatch = sourceHtml.match(/<dt[^>]*>[^<]*Формат работы[^<]*<\/dt>\s*<dd[^>]*>([\s\S]*?)<\/dd>/i);
   if (ddRemoteMatch && /удал(?:ен|ён)|remote|telecommute/i.test(ddRemoteMatch[1])) {
     return true;
+  }
+
+  const partsMatches = sourceHtml.matchAll(/class=["'][^"']*parts--[^"']*["'][^>]*>([\s\S]*?)<\/div>/gi);
+  for (const m of partsMatches) {
+    const text = m[1].replace(/<[^>]+>/g, ' ');
+    if (/удал(?:ен|ён)но|remote|telecommute/i.test(text)) {
+      return true;
+    }
   }
 
   const decoded = sourceHtml.replace(/&#34;|&#x22;|&quot;/gi, '"');
@@ -162,6 +174,10 @@ export function extractSelectedWorkFormatIds(sourceHtml: string, domWorkFormatTe
     checkText(domWorkFormatText);
   }
 
+  if (/["'](?:vacancy-label-)?work-schedule-remote["']/i.test(sourceHtml)) {
+    selected.add('REMOTE');
+  }
+
   const formatTextMatch = sourceHtml.match(/data-qa=["'](?:work-formats?(?:-text)?|vacancy-view-work-formats?)["'][^>]*>([\s\S]*?)<\/(?:div|span|dl|dd)>/i);
   if (formatTextMatch) {
     checkText(formatTextMatch[1].replace(/<[^>]+>/g, ' '));
@@ -170,6 +186,11 @@ export function extractSelectedWorkFormatIds(sourceHtml: string, domWorkFormatTe
   const ddMatch = sourceHtml.match(/<dt[^>]*>[^<]*Формат работы[^<]*<\/dt>\s*<dd[^>]*>([\s\S]*?)<\/dd>/i);
   if (ddMatch) {
     checkText(ddMatch[1].replace(/<[^>]+>/g, ' '));
+  }
+
+  const partsMatches = sourceHtml.matchAll(/class=["'][^"']*parts--[^"']*["'][^>]*>([\s\S]*?)<\/div>/gi);
+  for (const m of partsMatches) {
+    checkText(m[1].replace(/<[^>]+>/g, ' '));
   }
 
   const decoded = sourceHtml.replace(/&#34;|&#x22;|&quot;/gi, '"');

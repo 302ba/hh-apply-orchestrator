@@ -105,6 +105,24 @@ test('accepts remote work format from modern HH work-formats-text element HTML',
   assert.equal(checkLocationEligibility(location, ['Волгоград']).eligible, true);
 });
 
+test('accepts remote work format from Magritte parts header element HTML', () => {
+  const source = '<div class="parts--p7dhKej8hQy_BMUo"><p class="magritte-text">Полная занятость · Опыт 3–6 лет · График 5/2 · Удалённо</p></div>';
+  const location = parseVacancyLocation([], source);
+
+  assert.equal(location.isRemote, true);
+  assert.equal(location.workFormats.includes('REMOTE'), true);
+  assert.equal(checkLocationEligibility(location, ['Волгоград']).eligible, true);
+});
+
+test('accepts remote work format from vacancy-label-work-schedule-remote in page JSON', () => {
+  const source = '{"id":"vacancy-label-work-schedule-remote","text":"Можно удалённо"}';
+  const location = parseVacancyLocation([], source);
+
+  assert.equal(location.isRemote, true);
+  assert.equal(location.workFormats.includes('REMOTE'), true);
+  assert.equal(checkLocationEligibility(location, ['Волгоград']).eligible, true);
+});
+
 test('accepts remote work format from DOM text', () => {
   const domText = 'Формат работы: удалённо';
   const location = parseVacancyLocation([], '', domText);
