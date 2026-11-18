@@ -104,10 +104,16 @@ function hasRemoteWorkFormat(sourceHtml: string, domWorkFormatText = ''): boolea
 
   const decoded = sourceHtml.replace(/&#34;|&#x22;|&quot;/gi, '"');
 
-  // Trust only the explicitly selected work formats. Generic catalogs (e.g. all possible
-  // options shown in a picker) can include REMOTE even when the vacancy is ON_SITE only.
-  const selected = decoded.match(/["']selectedWorkFormats["']\s*:\s*\[([^\]]*)\]/i);
-  if (selected && !selected[1].includes('{') && /["']REMOTE["']/i.test(selected[1])) return true;
+  // Trust explicitly selected work formats in "workFormats":["REMOTE"] or "selectedWorkFormats":["REMOTE"].
+  // Generic catalogs (e.g. all possible options) contain ON_SITE, REMOTE, and HYBRID together, or objects with '{'.
+  for (const match of decoded.matchAll(/["'](?:selectedWorkFormats|workFormats)["']\s*:\s*\[([^\]]*)\]/gi)) {
+    const content = match[1];
+    if (content.includes('{')) continue;
+    const ids = [...content.matchAll(/["']([A-Z_]+)["']/g)].map((m) => m[1].toUpperCase());
+    if (ids.includes('REMOTE') && !(ids.includes('ON_SITE') && ids.includes('REMOTE') && ids.includes('HYBRID'))) {
+      return true;
+    }
+  }
 
   const singleFormat = decoded.match(/["']workFormat["']\s*:\s*["'](REMOTE|TELECOMMUTE)["']/i);
   if (singleFormat) return true;
@@ -195,10 +201,13 @@ export function extractSelectedWorkFormatIds(sourceHtml: string, domWorkFormatTe
 
   const decoded = sourceHtml.replace(/&#34;|&#x22;|&quot;/gi, '"');
 
-  const selectedMatch = decoded.match(/["']selectedWorkFormats["']\s*:\s*\[([^\]]*)\]/i);
-  if (selectedMatch && !selectedMatch[1].includes('{')) {
-    for (const id of selectedMatch[1].matchAll(/["']([A-Z_]+)["']/g)) {
-      selected.add(id[1].toUpperCase());
+  for (const match of decoded.matchAll(/["'](?:selectedWorkFormats|workFormats)["']\s*:\s*\[([^\]]*)\]/gi)) {
+    const content = match[1];
+    if (content.includes('{')) continue;
+    const ids = [...content.matchAll(/["']([A-Z_]+)["']/g)].map((m) => m[1].toUpperCase());
+    if (ids.includes('ON_SITE') && ids.includes('REMOTE') && ids.includes('HYBRID')) continue;
+    for (const id of ids) {
+      selected.add(id);
     }
   }
 
