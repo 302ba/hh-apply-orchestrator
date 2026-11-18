@@ -274,7 +274,13 @@ async function getVacancyDetails(page: Page, url: string): Promise<VacancyDetail
       // Location data can still be available in JSON-LD when description markup changes.
     }
 
-    return { title, employer, description, location: parseVacancyLocation(jsonLdScripts, sourceHtml) };
+    let workFormatText = '';
+    try {
+      const formatEl = page.locator("[data-qa='work-formats-text'], [data-qa='work-format-text'], [data-qa='vacancy-view-work-format'], [data-qa='vacancy-view-work-formats']").first();
+      if ((await formatEl.count()) > 0) workFormatText = (await formatEl.innerText()).trim();
+    } catch {}
+
+    return { title, employer, description, location: parseVacancyLocation(jsonLdScripts, sourceHtml, workFormatText) };
   } catch {
     return { title: '', employer: '', description: '', location: { cities: [], isRemote: false, workFormats: [] } };
   }

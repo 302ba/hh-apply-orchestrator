@@ -75,7 +75,21 @@ function collectJobPostingNodes(value: unknown, nodes: JsonObject[]): void {
   collectJobPostingNodes(value['@graph'], nodes);
 }
 
-function hasRemoteWorkFormat(sourceHtml: string): boolean {
+function hasRemoteWorkFormat(sourceHtml: string, domWorkFormatText = ''): boolean {
+  if (domWorkFormatText && /удал(?:ен|ён)|remote|telecommute/i.test(domWorkFormatText)) {
+    return true;
+  }
+
+  const formatTextMatch = sourceHtml.match(/data-qa=["'](?:work-formats?(?:-text)?|vacancy-view-work-formats?)["'][^>]*>([\s\S]*?)<\/(?:div|span|dl|dd)>/i);
+  if (formatTextMatch && /удал(?:ен|ён)|remote|telecommute/i.test(formatTextMatch[1])) {
+    return true;
+  }
+
+  const ddRemoteMatch = sourceHtml.match(/<dt[^>]*>[^<]*Формат работы[^<]*<\/dt>\s*<dd[^>]*>([\s\S]*?)<\/dd>/i);
+  if (ddRemoteMatch && /удал(?:ен|ён)|remote|telecommute/i.test(ddRemoteMatch[1])) {
+    return true;
+  }
+
   const decoded = sourceHtml.replace(/&#34;|&#x22;|&quot;/gi, '"');
 
   // Trust only the explicitly selected work formats. Generic catalogs (e.g. all possible
@@ -98,6 +112,7 @@ function hasRemoteWorkFormat(sourceHtml: string): boolean {
 export function parseVacancyLocation(
   jsonLdScripts: string[],
   sourceHtml = '',
+  domWorkFormatText = '',
 ): VacancyLocation {
   const nodes: JsonObject[] = [];
   for (const script of jsonLdScripts) {
@@ -116,12 +131,17 @@ export function parseVacancyLocation(
     isRemote ||= isRemoteValue(node.jobLocationType);
   }
   collectLocationNamesFromSource(sourceHtml, cities);
-  isRemote ||= hasRemoteWorkFormat(sourceHtml);
+  isRemote ||= hasRemoteWorkFormat(sourceHtml, domWorkFormatText);
+
+  const workFormats = extractSelectedWorkFormatIds(sourceHtml, domWorkFormatText);
+  if (isRemote && !workFormats.includes('REMOTE')) {
+    workFormats.push('REMOTE');
+  }
 
   return {
     cities: [...cities.values()],
     isRemote,
-    workFormats: extractSelectedWorkFormatIds(sourceHtml),
+    workFormats,
   };
 }
 
@@ -129,9 +149,30 @@ export function hasApplicationQuestionnaire(text: string): boolean {
   return /для отклика необходимо ответить на несколько вопросов работодателя/i.test(text);
 }
 
-export function extractSelectedWorkFormatIds(sourceHtml: string): string[] {
-  const decoded = sourceHtml.replace(/&#34;|&#x22;|&quot;/gi, '"');
+export function extractSelectedWorkFormatIds(sourceHtml: string, domWorkFormatText = ''): string[] {
   const selected = new Set<string>();
+
+  const checkText = (text: string) => {
+    if (/удал(?:ен|ён)|remote|telecommute/i.test(text)) selected.add('REMOTE');
+    if (/гибрид|hybrid/i.test(text)) selected.add('HYBRID');
+    if (/на месте|разъездн|в офисе|on[-_]?site/i.test(text)) selected.add('ON_SITE');
+  };
+
+  if (domWorkFormatText) {
+    checkText(domWorkFormatText);
+  }
+
+  const formatTextMatch = sourceHtml.match(/data-qa=["'](?:work-formats?(?:-text)?|vacancy-view-work-formats?)["'][^>]*>([\s\S]*?)<\/(?:div|span|dl|dd)>/i);
+  if (formatTextMatch) {
+    checkText(formatTextMatch[1].replace(/<[^>]+>/g, ' '));
+  }
+
+  const ddMatch = sourceHtml.match(/<dt[^>]*>[^<]*Формат работы[^<]*<\/dt>\s*<dd[^>]*>([\s\S]*?)<\/dd>/i);
+  if (ddMatch) {
+    checkText(ddMatch[1].replace(/<[^>]+>/g, ' '));
+  }
+
+  const decoded = sourceHtml.replace(/&#34;|&#x22;|&quot;/gi, '"');
 
   const selectedMatch = decoded.match(/["']selectedWorkFormats["']\s*:\s*\[([^\]]*)\]/i);
   if (selectedMatch && !selectedMatch[1].includes('{')) {
@@ -174,7 +215,7 @@ export function checkLocationEligibility(
 
   // Outside the onsite list, the candidate only accepts vacancies that allow remote work.
   const remoteLike = new Set(['REMOTE', 'TELECOMMUTE']);
-  const hasRemote = selectedWorkFormats.some((id) => remoteLike.has(id));
+  const hasRemote = location.isRemote || selectedWorkFormats.some((id) => remoteLike.has(id));
   if (hasRemote) return { eligible: true, reason: 'Удалённый формат' };
 
   if (location.cities.length > 0) {

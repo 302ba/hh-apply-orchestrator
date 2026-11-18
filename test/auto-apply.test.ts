@@ -96,6 +96,24 @@ test('accepts remote work format from selected workFormats', () => {
   assert.equal(checkLocationEligibility(location, [], location.workFormats).eligible, true);
 });
 
+test('accepts remote work format from modern HH work-formats-text element HTML', () => {
+  const source = '<div data-qa="work-formats-text" class="magritte-text___p627s_3-0-28"><dl><dt>Формат работы: </dt><dd>удалённо</dd></dl></div>';
+  const location = parseVacancyLocation([], source);
+
+  assert.equal(location.isRemote, true);
+  assert.equal(location.workFormats.includes('REMOTE'), true);
+  assert.equal(checkLocationEligibility(location, ['Волгоград']).eligible, true);
+});
+
+test('accepts remote work format from DOM text', () => {
+  const domText = 'Формат работы: удалённо';
+  const location = parseVacancyLocation([], '', domText);
+
+  assert.equal(location.isRemote, true);
+  assert.equal(location.workFormats.includes('REMOTE'), true);
+  assert.equal(checkLocationEligibility(location, ['Волгоград']).eligible, true);
+});
+
 test('accepts remote work format from selected workFormatsElement', () => {
   const source = '&#34;workFormats&#34;:[{&#34;workFormatsElement&#34;:[&#34;REMOTE&#34;]}]';
   const location = parseVacancyLocation([], source);
