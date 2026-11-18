@@ -1,7 +1,14 @@
 /// <reference lib="dom" />
 import type { Page } from 'playwright';
 
-export type QuestionType = 'text' | 'textarea' | 'radio' | 'select' | 'checkbox' | 'date' | 'number';
+export type QuestionType =
+  | 'text'
+  | 'textarea'
+  | 'radio'
+  | 'select'
+  | 'checkbox'
+  | 'date'
+  | 'number';
 
 export interface QuestionnaireQuestion {
   type: QuestionType;
@@ -56,9 +63,13 @@ export async function extractQuestionnaire(page: Page): Promise<Questionnaire | 
     }
 
     if ((await handle.locator('select').count()) > 0) {
-      const options = await handle.locator('select option').evaluateAll((opts) =>
-        opts.map((o) => (o as HTMLOptionElement).value || (o as HTMLOptionElement).textContent || ''),
-      );
+      const options = await handle
+        .locator('select option')
+        .evaluateAll((opts) =>
+          opts.map(
+            (o) => (o as HTMLOptionElement).value || (o as HTMLOptionElement).textContent || '',
+          ),
+        );
       questions.push({ type: 'select', name, label, options, required });
       continue;
     }
@@ -67,9 +78,7 @@ export async function extractQuestionnaire(page: Page): Promise<Questionnaire | 
       const options = await handle
         .locator('input[type="radio"]')
         .evaluateAll((inputs) =>
-          inputs.map(
-            (i) => (i as HTMLInputElement).value || i.getAttribute('aria-label') || '',
-          ),
+          inputs.map((i) => (i as HTMLInputElement).value || i.getAttribute('aria-label') || ''),
         );
       questions.push({ type: 'radio', name, label, options, required });
       continue;
@@ -79,9 +88,7 @@ export async function extractQuestionnaire(page: Page): Promise<Questionnaire | 
       const options = await handle
         .locator('input[type="checkbox"]')
         .evaluateAll((inputs) =>
-          inputs.map(
-            (i) => (i as HTMLInputElement).value || i.getAttribute('aria-label') || '',
-          ),
+          inputs.map((i) => (i as HTMLInputElement).value || i.getAttribute('aria-label') || ''),
         );
       questions.push({ type: 'checkbox', name, label, options, required });
       continue;
@@ -122,9 +129,7 @@ export async function fillQuestionnaire(
   for (const q of form.questions) {
     const value = answers[q.name];
     if (value === undefined || value === null) continue;
-    const handle = page
-      .locator(`[data-qa="vacancy-response-form-question-${q.name}"]`)
-      .first();
+    const handle = page.locator(`[data-qa="vacancy-response-form-question-${q.name}"]`).first();
 
     if (q.type === 'text' || q.type === 'number' || q.type === 'date') {
       const input = handle.locator('input').first();

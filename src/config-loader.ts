@@ -1,5 +1,5 @@
-import path from 'node:path';
 import fs from 'node:fs';
+import path from 'node:path';
 import matter from 'gray-matter';
 import { fileConsole } from './logger.js';
 
@@ -88,7 +88,9 @@ export function loadResume(): string {
     return fs.readFileSync(RESUME_FILE, 'utf-8').trim();
   }
   if (fs.existsSync(RESUME_EXAMPLE)) {
-    console.log(`\n📄 Первый запуск: копирую ${path.basename(RESUME_EXAMPLE)} → ${path.basename(RESUME_FILE)}`);
+    console.log(
+      `\n📄 Первый запуск: копирую ${path.basename(RESUME_EXAMPLE)} → ${path.basename(RESUME_FILE)}`,
+    );
     fs.copyFileSync(RESUME_EXAMPLE, RESUME_FILE);
     console.log(`   Заполни ${RESUME_FILE} и запусти снова.`);
     process.exit(0);
@@ -98,7 +100,10 @@ export function loadResume(): string {
 
 function stringList(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
-  return value.map(String).map((item) => item.trim()).filter(Boolean);
+  return value
+    .map(String)
+    .map((item) => item.trim())
+    .filter(Boolean);
 }
 
 export function loadSearchQueries(): string[] {
@@ -163,8 +168,9 @@ export function profileToPromptString(p: ProfileDoc): string {
   // Prefer the human-authored body; fall back to a synthesized summary if body is empty.
   if (p.body && !p.body.includes('YOUR_NAME')) return p.body;
 
-  const skills = p.skills.length ? p.skills.map((s) => `- ${s}`).join('\n') : '- (не заполнено)';
-  const cases = p.cases.length ? p.cases.map((c) => `- ${c}`).join('\n') : '- (не заполнено)';
+  const skills =
+    p.skills.length > 0 ? p.skills.map((s) => `- ${s}`).join('\n') : '- (не заполнено)';
+  const cases = p.cases.length > 0 ? p.cases.map((c) => `- ${c}`).join('\n') : '- (не заполнено)';
 
   return [
     `Имя: ${p.name || 'YOUR_NAME'}`,

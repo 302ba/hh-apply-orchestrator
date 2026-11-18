@@ -9,12 +9,11 @@ export function findExcludedTerm(text: string, excludedTerms: string[]): string 
 
     const startsWithWordCharacter = /^[\p{L}\p{N}_]/u.test(term);
     const endsWithWordCharacter = /[\p{L}\p{N}_]$/u.test(term);
+    // biome-ignore lint/security/noSecrets: Regex word boundary pattern
     const leftBoundary = startsWithWordCharacter ? '(?<![\\p{L}\\p{N}_])' : '';
+    // biome-ignore lint/security/noSecrets: Regex word boundary pattern
     const rightBoundary = endsWithWordCharacter ? '(?![\\p{L}\\p{N}_])' : '';
-    const pattern = new RegExp(
-      `${leftBoundary}${escapeRegExp(term)}${rightBoundary}`,
-      'iu',
-    );
+    const pattern = new RegExp(`${leftBoundary}${escapeRegExp(term)}${rightBoundary}`, 'iu');
     if (pattern.test(text)) return term;
   }
   return undefined;

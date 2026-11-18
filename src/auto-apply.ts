@@ -1,35 +1,44 @@
-import { chromium, type Page, type BrowserContext } from 'playwright';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { createInterface } from 'node:readline/promises';
 import { stdin as input, stdout as output } from 'node:process';
+import { createInterface } from 'node:readline/promises';
+import { fileURLToPath } from 'node:url';
+import { type BrowserContext, chromium, type Page } from 'playwright';
 import {
-  SESSION_FILE,
+  type ApplyResult,
   ensureSessionDir,
   getAutomationConfig,
   getLlmConfig,
-  sessionExists,
   readVacancyUrl,
-  type ApplyResult,
+  SESSION_FILE,
+  sessionExists,
   type Vacancy,
 } from './config.js';
 import {
-  QUERIES_FILE,
   loadExcludedText,
   loadProfile,
   loadResume,
   loadSearchQueries,
-  profileHasPlaceholders,
   PROFILE_FILE,
   type ProfileDoc,
+  profileHasPlaceholders,
+  QUERIES_FILE,
 } from './config-loader.js';
-import { generateCoverLetter, answerQuestionnaire, buildProfilePrompt } from './llm.js';
-import { extractQuestionnaire, fillQuestionnaire, isQuestionnairePage, type Questionnaire } from './questionnaire.js';
 import { findExcludedTerm } from './exclusions.js';
-import { checkLocationEligibility, parseVacancyLocation, type VacancyLocation } from './vacancy-location.js';
-import { fileConsole } from './logger.js';
 import { loadCachedCoverLetter, saveCoverLetter } from './letters.js';
-import { loadSkippedKeys, addSkippedKey } from './skip-state.js';
+import { answerQuestionnaire, buildProfilePrompt, generateCoverLetter } from './llm.js';
+import { fileConsole } from './logger.js';
+import {
+  extractQuestionnaire,
+  fillQuestionnaire,
+  isQuestionnairePage,
+  type Questionnaire,
+} from './questionnaire.js';
+import { addSkippedKey, loadSkippedKeys } from './skip-state.js';
+import {
+  checkLocationEligibility,
+  parseVacancyLocation,
+  type VacancyLocation,
+} from './vacancy-location.js';
 
 const console = fileConsole;
 
@@ -55,10 +64,14 @@ export function normalizeVacancyUrl(href: string): string {
   }
 }
 
-export function buildSearchUrl(query: string, pageNum: number, excludedTerms: string[] = []): string {
+export function buildSearchUrl(
+  query: string,
+  pageNum: number,
+  excludedTerms: string[] = [],
+): string {
   const params = new URLSearchParams({
     text: query,
-//    area: '113',
+    //    area: '113',
     items_on_page: '20',
     page: String(pageNum),
     enable_snippets: 'true',
@@ -74,7 +87,7 @@ export function findHandledApplicationStatus(text: string): string | undefined {
     .split(/\r?\n/)
     .map((line) => line.trim())
     .filter(Boolean);
-  const statuses: Array<[RegExp, string]> = [
+  const statuses: [RegExp, string][] = [
     [/^Вам отказали$/i, 'Работодатель отказал в отклике'],
     [/^Отклик отклон(?:ён|ен)$/i, 'Отклик отклонён'],
     [/^Вы откликнулись$/i, 'Уже откликались'],
@@ -108,7 +121,12 @@ export function deduplicateVacancies(vacancies: Vacancy[]): Vacancy[] {
   return unique;
 }
 
-async function gotoWithRetry(page: Page, url: string, timeout: number, attempts: number): Promise<void> {
+async function gotoWithRetry(
+  page: Page,
+  url: string,
+  timeout: number,
+  attempts: number,
+): Promise<void> {
   let lastError: unknown;
   for (let attempt = 1; attempt <= attempts; attempt++) {
     try {
@@ -116,7 +134,7 @@ async function gotoWithRetry(page: Page, url: string, timeout: number, attempts:
       return;
     } catch (err) {
       lastError = err;
-      if (attempt < attempts) await new Promise((resolve) => setTimeout(resolve, attempt * 1_000));
+      if (attempt < attempts) await new Promise((resolve) => setTimeout(resolve, attempt * 1000));
     }
   }
   throw lastError;
@@ -146,7 +164,9 @@ async function isSessionActive(page: Page): Promise<boolean> {
   if (!sessionExists()) return false;
   try {
     await gotoWithRetry(page, `${HH_BASE_URL}/applicant/resumes`, 20_000, 2);
-    const isLoginPage = page.url().includes('/login') || (await page.locator("[data-qa*='mainmenu_loginButton']").count()) > 0;
+    const isLoginPage =
+      page.url().includes('/login') ||
+      (await page.locator("[data-qa*='mainmenu_loginButton']").count()) > 0;
     return !isLoginPage;
   } catch {
     return false;
@@ -219,24 +239,27 @@ async function searchVacancies(
 
     for (const card of cards) {
       try {
-        const isDiscarded = (await card.locator("[data-qa='vacancy-serp__vacancy_discard']").count()) > 0;
-        const isAlreadyResponded = (await card.locator("[data-qa='vacancy-serp__vacancy_responded']").count()) > 0;
+        const isDiscarded =
+          (await card.locator("[data-qa='vacancy-serp__vacancy_discard']").count()) > 0;
+        const isAlreadyResponded =
+          (await card.locator("[data-qa='vacancy-serp__vacancy_responded']").count()) > 0;
         if (isDiscarded || isAlreadyResponded) continue;
         const titleLocator = card.locator("[data-qa='serp-item__title']").first();
-        await titleLocator.waitFor({ state: 'visible', timeout: 5_000 });
+        await titleLocator.waitFor({ state: 'visible', timeout: 5000 });
 
         const href = await titleLocator.getAttribute('href');
         const vacancyTitle = (await titleLocator.innerText()).trim();
         if (!href) continue;
 
         const employerLocator = card.locator("[data-qa='vacancy-serp__vacancy-employer']").first();
-        const employer = (await employerLocator.count()) > 0
-          ? (await employerLocator.innerText()).trim()
-          : 'Компания';
+        const employer =
+          (await employerLocator.count()) > 0
+            ? (await employerLocator.innerText()).trim()
+            : 'Компания';
 
         vacancies.push({ title: vacancyTitle, url: normalizeVacancyUrl(href), employer });
       } catch {
-        continue;
+        // Skip card if required elements are missing
       }
     }
 
@@ -255,56 +278,89 @@ export async function getVacancyDetails(page: Page, url: string): Promise<Vacanc
     try {
       const titleEl = page.locator("[data-qa='vacancy-title'], h1").first();
       if ((await titleEl.count()) > 0) title = (await titleEl.innerText()).trim();
-    } catch {}
+    } catch {
+      // Optional title extraction fallback
+    }
 
     let employer = '';
     try {
-      const employerEl = page.locator("[data-qa='vacancy-company-name'], [data-qa='vacancy-serp__vacancy-employer']").first();
+      const employerEl = page
+        .locator("[data-qa='vacancy-company-name'], [data-qa='vacancy-serp__vacancy-employer']")
+        .first();
       if ((await employerEl.count()) > 0) employer = (await employerEl.innerText()).trim();
-    } catch {}
+    } catch {
+      // Optional employer extraction fallback
+    }
 
     let description = '';
     try {
-      await page.waitForSelector("[data-qa='vacancy-description'], [data-qa='main-content'], h1", { timeout: 10_000 });
+      await page.waitForSelector("[data-qa='vacancy-description'], [data-qa='main-content'], h1", {
+        timeout: 10_000,
+      });
       const desc = page.locator("[data-qa='vacancy-description']").first();
       if ((await desc.count()) > 0) description = await desc.innerText();
     } catch {
       // Location data can still be available in JSON-LD when description markup changes.
     }
 
-    const jsonLdScripts = await page.locator("script[type='application/ld+json']").allTextContents();
+    const jsonLdScripts = await page
+      .locator("script[type='application/ld+json']")
+      .allTextContents();
     const sourceHtml = await page.content();
 
     let workFormatText = '';
     try {
-      const formatEl = page.locator("[data-qa='work-formats-text'], [data-qa='work-format-text'], [data-qa='vacancy-view-work-format'], [data-qa='vacancy-view-work-formats']").first();
+      const formatEl = page
+        .locator(
+          "[data-qa='work-formats-text'], [data-qa='work-format-text'], [data-qa='vacancy-view-work-format'], [data-qa='vacancy-view-work-formats']",
+        )
+        .first();
       if ((await formatEl.count()) > 0) {
         workFormatText = (await formatEl.innerText()).trim();
       }
 
       if (!workFormatText) {
-        const partsText = await page.evaluate(() => {
-          const parts = Array.from(document.querySelectorAll('div[class*="parts--"], [data-qa="main-content"] p'));
-          for (const el of parts) {
-            const text = (el as HTMLElement).innerText || '';
-            if (/\b(?:удалённо|удаленно|гибрид|на месте работодателя)\b/i.test(text)) {
-              return text;
+        const partsText = await page
+          .evaluate(() => {
+            const parts = Array.from(
+              document.querySelectorAll('div[class*="parts--"], [data-qa="main-content"] p'),
+            );
+            for (const el of parts) {
+              const text = (el as HTMLElement).innerText || '';
+              if (/\b(?:удалённо|удаленно|гибрид|на месте работодателя)\b/i.test(text)) {
+                return text;
+              }
             }
-          }
-          return '';
-        }).catch(() => '');
+            return '';
+          })
+          .catch(() => '');
         if (partsText) workFormatText = partsText;
       }
-    } catch {}
+    } catch {
+      // Optional work format extraction fallback
+    }
 
-    return { title, employer, description, location: parseVacancyLocation(jsonLdScripts, sourceHtml, workFormatText) };
+    return {
+      title,
+      employer,
+      description,
+      location: parseVacancyLocation(jsonLdScripts, sourceHtml, workFormatText),
+    };
   } catch {
-    return { title: '', employer: '', description: '', location: { cities: [], isRemote: false, workFormats: [] } };
+    return {
+      title: '',
+      employer: '',
+      description: '',
+      location: { cities: [], isRemote: false, workFormats: [] },
+    };
   }
 }
 
 async function getHandledApplicationStatus(page: Page): Promise<string | undefined> {
-  const bodyText = await page.locator('body').innerText().catch(() => '');
+  const bodyText = await page
+    .locator('body')
+    .innerText()
+    .catch(() => '');
   return findHandledApplicationStatus(bodyText);
 }
 
@@ -317,12 +373,18 @@ const CONFIRMATION_PATTERNS = [
 ];
 
 async function responseConfirmed(page: Page): Promise<boolean> {
-  const bodyText = await page.locator('body').innerText().catch(() => '');
+  const bodyText = await page
+    .locator('body')
+    .innerText()
+    .catch(() => '');
   return CONFIRMATION_PATTERNS.some((p) => bodyText.includes(p));
 }
 
 async function applicationFailureReason(page: Page): Promise<string> {
-  const bodyText = await page.locator('body').innerText().catch(() => '');
+  const bodyText = await page
+    .locator('body')
+    .innerText()
+    .catch(() => '');
   const lines = bodyText
     .split(/\r?\n/)
     .map((line) => line.trim())
@@ -342,7 +404,10 @@ async function applicationFailureReason(page: Page): Promise<string> {
 }
 
 async function applicationFailureResult(page: Page): Promise<ApplyResult> {
-  const bodyText = await page.locator('body').innerText().catch(() => '');
+  const bodyText = await page
+    .locator('body')
+    .innerText()
+    .catch(() => '');
   if (hasApplicationQuestionnaire(bodyText)) {
     return {
       status: 'skipped',
@@ -377,7 +442,7 @@ async function dismissRelocationWarning(page: Page): Promise<void> {
   if ((await confirm.count()) === 0) return;
   console.log('      🌐 Подтверждаю отклик на вакансию в другой стране');
   await confirm.click();
-  await page.waitForTimeout(1_000);
+  await page.waitForTimeout(1000);
 }
 
 async function attachCoverLetterAfterApply(page: Page, letter: string): Promise<boolean> {
@@ -391,7 +456,7 @@ async function attachCoverLetterAfterApply(page: Page, letter: string): Promise<
 
   console.log('      📎 Нашёл кнопку «Приложить сопроводительное письмо», прикрепляю...');
   await attachBtn.click();
-  await page.waitForTimeout(2_000);
+  await page.waitForTimeout(2000);
 
   // The popup contains the cover letter textarea directly. No "Добавить" step needed.
   const letterArea = page
@@ -416,15 +481,12 @@ async function attachCoverLetterAfterApply(page: Page, letter: string): Promise<
     return false;
   }
   await submit.click();
-  await page.waitForTimeout(3_000);
+  await page.waitForTimeout(3000);
   await dismissRelocationWarning(page);
   return responseConfirmed(page);
 }
 
-async function fillCoverLetter(
-  page: Page,
-  message: string,
-): Promise<boolean> {
+async function fillCoverLetter(page: Page, message: string): Promise<boolean> {
   const letterAreaSelector =
     "textarea[data-qa='vacancy-response-popup-form-letter-input'], textarea[data-qa='vacancy-response-letter-input'], textarea[name='text'], textarea";
 
@@ -441,11 +503,13 @@ async function fillCoverLetter(
     if ((await directLetterBtn.count()) > 0) {
       console.log('      📎 Нашёл кнопку добавления сопроводительного письма, нажимаю...');
       await directLetterBtn.click();
-      await page.waitForTimeout(2_000);
+      await page.waitForTimeout(2000);
     } else {
       // 2. Look for a button that lives inside a cover-letter block.
       const addBtns = await page
-        .locator("button:has-text('Добавить'), a:has-text('Добавить'), button:has-text('Написать'), a:has-text('Написать')")
+        .locator(
+          "button:has-text('Добавить'), a:has-text('Добавить'), button:has-text('Написать'), a:has-text('Написать')",
+        )
         .all();
       for (const btn of addBtns) {
         try {
@@ -460,7 +524,7 @@ async function fillCoverLetter(
           });
           if (parentText) {
             await btn.click();
-            await page.waitForTimeout(1_000);
+            await page.waitForTimeout(1000);
             break;
           }
         } catch {
@@ -479,7 +543,10 @@ async function fillCoverLetter(
 }
 
 async function handleQuestionnaireIfPresent(page: Page): Promise<ApplyResult | undefined> {
-  const bodyText = await page.locator('body').innerText().catch(() => '');
+  const bodyText = await page
+    .locator('body')
+    .innerText()
+    .catch(() => '');
   if (!isQuestionnairePage(bodyText)) return undefined;
 
   const form = await extractQuestionnaire(page);
@@ -509,7 +576,7 @@ async function handleQuestionnaireIfPresent(page: Page): Promise<ApplyResult | u
     return { status: 'error', reason: 'Кнопка отправки анкеты не найдена' };
   }
   await submit.click();
-  await page.waitForTimeout(3_000);
+  await page.waitForTimeout(3000);
 
   if (await responseConfirmed(page)) {
     return { status: 'success', reason: 'Отправлено с ответами на вопросы' };
@@ -519,14 +586,17 @@ async function handleQuestionnaireIfPresent(page: Page): Promise<ApplyResult | u
 
 function answersToValues(
   answers: Record<string, string | null>,
-  questions: ReadonlyArray<Questionnaire['questions'][number]>,
+  questions: readonly Questionnaire['questions'][number][],
 ): Record<string, string | string[] | undefined> {
   const result: Record<string, string | string[] | undefined> = {};
   for (const q of questions) {
     const value = answers[q.name];
     if (value === null || value === undefined) continue;
     if (q.type === 'checkbox') {
-      result[q.name] = value.split(',').map((s) => s.trim()).filter(Boolean);
+      result[q.name] = value
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean);
     } else {
       result[q.name] = value;
     }
@@ -536,20 +606,30 @@ function answersToValues(
 
 async function waitForManualSubmission(page: Page): Promise<ApplyResult> {
   const rl = createInterface({ input, output });
-  console.log('\n      ✋ Режим: отправь отклик вручную (включи вопросы, ответь, нажми Отправить).');
-  console.log('      ⏳ После отправки нажми Enter. Чтобы пропустить вакансию — введи s и нажми Enter.');
+  console.log(
+    '\n      ✋ Режим: отправь отклик вручную (включи вопросы, ответь, нажми Отправить).',
+  );
+  console.log(
+    '      ⏳ После отправки нажми Enter. Чтобы пропустить вакансию — введи s и нажми Enter.',
+  );
   const answer = (await rl.question('      ▶ ')).trim().toLowerCase();
   rl.close();
-  await page.waitForTimeout(1_000);
-  if (answer === 's' || answer === 'skip') return { status: 'skipped', reason: 'Пропущено вручную' };
+  await page.waitForTimeout(1000);
+  if (answer === 's' || answer === 'skip')
+    return { status: 'skipped', reason: 'Пропущено вручную' };
   if (await responseConfirmed(page)) return { status: 'success', reason: 'Отправлено вручную' };
   return applicationFailureResult(page);
 }
 
-async function applyToVacancy(page: Page, url: string, message: string, semiAuto: boolean): Promise<ApplyResult> {
+async function applyToVacancy(
+  page: Page,
+  url: string,
+  message: string,
+  semiAuto: boolean,
+): Promise<ApplyResult> {
   try {
     await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 20_000 });
-    await page.waitForTimeout(3_000);
+    await page.waitForTimeout(3000);
 
     await dismissRelocationWarning(page);
 
@@ -561,7 +641,7 @@ async function applyToVacancy(page: Page, url: string, message: string, semiAuto
     if ((await coverLink.count()) > 0 && message) {
       console.log("      🔍 Нашёл ссылку 'Написать сопроводительное'");
       await coverLink.click();
-      await page.waitForTimeout(2_000);
+      await page.waitForTimeout(2000);
 
       await fillCoverLetter(page, message);
 
@@ -572,7 +652,7 @@ async function applyToVacancy(page: Page, url: string, message: string, semiAuto
         .first();
       if ((await submitBtn.count()) > 0) {
         await submitBtn.click();
-        await page.waitForTimeout(3_000);
+        await page.waitForTimeout(3000);
         return resultAfterSubmit(page, 'С письмом', message);
       }
     }
@@ -592,15 +672,15 @@ async function applyToVacancy(page: Page, url: string, message: string, semiAuto
       if ((await dropdown.count()) > 0) {
         console.log('      🔍 Нашёл выпадающее меню');
         await dropdown.click();
-        await page.waitForTimeout(1_000);
+        await page.waitForTimeout(1000);
 
         const withLetter = page
-          .locator("text=С сопроводительным, text=сопроводительным письмом")
+          .locator('text=С сопроводительным, text=сопроводительным письмом')
           .first();
         if ((await withLetter.count()) > 0) {
           console.log("      🔍 Нашёл опцию 'С сопроводительным'");
           await withLetter.click();
-          await page.waitForTimeout(2_000);
+          await page.waitForTimeout(2000);
 
           if (await fillCoverLetter(page, message)) {
             console.log('      ✍️  Заполняю письмо...');
@@ -613,7 +693,7 @@ async function applyToVacancy(page: Page, url: string, message: string, semiAuto
             .first();
           if ((await submitBtn.count()) > 0) {
             await submitBtn.click();
-            await page.waitForTimeout(3_000);
+            await page.waitForTimeout(3000);
             return resultAfterSubmit(page, 'С письмом (меню)', message);
           }
         }
@@ -625,7 +705,7 @@ async function applyToVacancy(page: Page, url: string, message: string, semiAuto
       if (semiAuto) {
         console.log("      🔍 Жму основную кнопку 'Откликнуться'");
         await applyBtn.click();
-        await page.waitForTimeout(3_000);
+        await page.waitForTimeout(3000);
         await dismissRelocationWarning(page);
 
         if (message) {
@@ -643,7 +723,7 @@ async function applyToVacancy(page: Page, url: string, message: string, semiAuto
       }
       console.log("      🔍 Жму основную кнопку 'Откликнуться'");
       await applyBtn.click();
-      await page.waitForTimeout(3_000);
+      await page.waitForTimeout(3000);
       await dismissRelocationWarning(page);
 
       // Если отклик подтвердился сразу (быстрый отклик в 1 клик):
@@ -669,7 +749,7 @@ async function applyToVacancy(page: Page, url: string, message: string, semiAuto
         if ((await submitBtn.count()) > 0) {
           console.log('      📨 Нажимаю кнопку отправки...');
           await submitBtn.click();
-          await page.waitForTimeout(3_000);
+          await page.waitForTimeout(3000);
           return resultAfterSubmit(page, 'С письмом (после отклика)', message);
         }
 
@@ -679,7 +759,7 @@ async function applyToVacancy(page: Page, url: string, message: string, semiAuto
           if (txt.includes('отправ') || txt.includes('откликн')) {
             console.log(`      📨 Нашёл кнопку: ${txt}`);
             await btn.click();
-            await page.waitForTimeout(3_000);
+            await page.waitForTimeout(3000);
             return resultAfterSubmit(page, 'С письмом', message);
           }
         }
@@ -719,7 +799,9 @@ async function processVacancy(
   if (!automation.generateOnly && (vacancy.title || vacancy.employer)) {
     const titleMatch = findExcludedTerm(`${vacancy.title}\n${vacancy.employer}`, excludedTerms);
     if (titleMatch) {
-      console.log(`\n  [${index + 1}/${total}] ${(vacancy.title || 'Вакансия').slice(0, 50)}... ${vacancy.url}`);
+      console.log(
+        `\n  [${index + 1}/${total}] ${(vacancy.title || 'Вакансия').slice(0, 50)}... ${vacancy.url}`,
+      );
       console.log(`      Компания: ${vacancy.employer || 'Компания'}`);
       skip(`по исключению: ${titleMatch}`, false);
       return;
@@ -735,7 +817,8 @@ async function processVacancy(
   console.log(`      Компания: ${employer}`);
 
   const handledStatus = await getHandledApplicationStatus(page);
-  const alreadyApplied = handledStatus === 'Уже откликались' || handledStatus === 'Отклик уже отправлен';
+  const alreadyApplied =
+    handledStatus === 'Уже откликались' || handledStatus === 'Отклик уже отправлен';
   if (handledStatus && !alreadyApplied) {
     // Status-based outcomes (rejected, withdrawn) are re-detected by HH each run; no need to persist.
     skip(handledStatus, false);
@@ -875,7 +958,11 @@ async function main(): Promise<void> {
   if (vacancyUrl) {
     console.log(`\n🔗 Режим одной вакансии: ${vacancyUrl}`);
     const llmCheck = getLlmConfig();
-    if (!llmCheck.apiKey || llmCheck.apiKey.startsWith('sk-replace') || llmCheck.apiKey === 'YOUR_OPENAI_API_KEY') {
+    if (
+      !llmCheck.apiKey ||
+      llmCheck.apiKey.startsWith('sk-replace') ||
+      llmCheck.apiKey === 'YOUR_OPENAI_API_KEY'
+    ) {
       console.log('\n❌ Ошибка: укажи API ключ для провайдера!');
       process.exit(1);
     }
@@ -892,7 +979,8 @@ async function main(): Promise<void> {
   console.log(`🚫 Исключения: ${excludedTerms.length}`);
   console.log(`⚙️  Режим: ${mode}`);
   if (automation.dryRun) console.log('🧪 Dry-run: письма и отклики не отправляются');
-  if (automation.generateOnly) console.log('✍️  Режим --generate: только генерация/перегенерация письма');
+  if (automation.generateOnly)
+    console.log('✍️  Режим --generate: только генерация/перегенерация письма');
 
   const stats = { success: 0, skipped: 0, error: 0 };
   const seenVacancies = new Set<string>();
@@ -927,7 +1015,15 @@ async function main(): Promise<void> {
           console.log(`  📊 Найдено вакансий: ${vacancies.length}`);
 
           for (const [i, vacancy] of vacancies.entries()) {
-            await processVacancy(page, vacancy, excludedTerms, automation, stats, i, vacancies.length);
+            await processVacancy(
+              page,
+              vacancy,
+              excludedTerms,
+              automation,
+              stats,
+              i,
+              vacancies.length,
+            );
           }
         }
       }

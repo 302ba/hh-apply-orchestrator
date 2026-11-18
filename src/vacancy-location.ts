@@ -49,7 +49,9 @@ function collectLocationNamesFromSource(sourceHtml: string, cities: Map<string, 
   const decoded = sourceHtml.replace(/&#34;|&#x22;|&quot;/gi, '"');
   for (const match of decoded.matchAll(/["']address["']\s*:\s*\{([^{}]*?)\}/gi)) {
     const block = match[1];
-    for (const id of block.matchAll(/["'](?:city|title|name|addressLocality)["']\s*:\s*["']([^"']+)["']/gi)) {
+    for (const id of block.matchAll(
+      /["'](?:city|title|name|addressLocality)["']\s*:\s*["']([^"']+)["']/gi,
+    )) {
       addCity(cities, id[1]);
     }
   }
@@ -69,7 +71,10 @@ function collectJobPostingNodes(value: unknown, nodes: JsonObject[]): void {
 
   const type = value['@type'];
   if (typeof type === 'string' && /jobposting/i.test(type)) nodes.push(value);
-  if (Array.isArray(type) && type.some((item) => typeof item === 'string' && /jobposting/i.test(item))) {
+  if (
+    Array.isArray(type) &&
+    type.some((item) => typeof item === 'string' && /jobposting/i.test(item))
+  ) {
     nodes.push(value);
   }
   collectJobPostingNodes(value['@graph'], nodes);
@@ -84,17 +89,23 @@ function hasRemoteWorkFormat(sourceHtml: string, domWorkFormatText = ''): boolea
     return true;
   }
 
-  const formatTextMatch = sourceHtml.match(/data-qa=["'](?:work-formats?(?:-text)?|vacancy-view-work-formats?)["'][^>]*>([\s\S]*?)<\/(?:div|span|dl|dd)>/i);
+  const formatTextMatch = sourceHtml.match(
+    /data-qa=["'](?:work-formats?(?:-text)?|vacancy-view-work-formats?)["'][^>]*>([\s\S]*?)<\/(?:div|span|dl|dd)>/i,
+  );
   if (formatTextMatch && /удал(?:ен|ён)|remote|telecommute/i.test(formatTextMatch[1])) {
     return true;
   }
 
-  const ddRemoteMatch = sourceHtml.match(/<dt[^>]*>[^<]*Формат работы[^<]*<\/dt>\s*<dd[^>]*>([\s\S]*?)<\/dd>/i);
+  const ddRemoteMatch = sourceHtml.match(
+    /<dt[^>]*>[^<]*Формат работы[^<]*<\/dt>\s*<dd[^>]*>([\s\S]*?)<\/dd>/i,
+  );
   if (ddRemoteMatch && /удал(?:ен|ён)|remote|telecommute/i.test(ddRemoteMatch[1])) {
     return true;
   }
 
-  const partsMatches = sourceHtml.matchAll(/class=["'][^"']*parts--[^"']*["'][^>]*>([\s\S]*?)<\/div>/gi);
+  const partsMatches = sourceHtml.matchAll(
+    /class=["'][^"']*parts--[^"']*["'][^>]*>([\s\S]*?)<\/div>/gi,
+  );
   for (const m of partsMatches) {
     const text = m[1].replace(/<[^>]+>/g, ' ');
     if (/удал(?:ен|ён)но|remote|telecommute/i.test(text)) {
@@ -106,11 +117,16 @@ function hasRemoteWorkFormat(sourceHtml: string, domWorkFormatText = ''): boolea
 
   // Trust explicitly selected work formats in "workFormats":["REMOTE"] or "selectedWorkFormats":["REMOTE"].
   // Generic catalogs (e.g. all possible options) contain ON_SITE, REMOTE, and HYBRID together, or objects with '{'.
-  for (const match of decoded.matchAll(/["'](?:selectedWorkFormats|workFormats)["']\s*:\s*\[([^\]]*)\]/gi)) {
+  for (const match of decoded.matchAll(
+    /["'](?:selectedWorkFormats|workFormats)["']\s*:\s*\[([^\]]*)\]/gi,
+  )) {
     const content = match[1];
     if (content.includes('{')) continue;
     const ids = [...content.matchAll(/["']([A-Z_]+)["']/g)].map((m) => m[1].toUpperCase());
-    if (ids.includes('REMOTE') && !(ids.includes('ON_SITE') && ids.includes('REMOTE') && ids.includes('HYBRID'))) {
+    if (
+      ids.includes('REMOTE') &&
+      !(ids.includes('ON_SITE') && ids.includes('REMOTE') && ids.includes('HYBRID'))
+    ) {
       return true;
     }
   }
@@ -137,7 +153,7 @@ export function parseVacancyLocation(
     try {
       collectJobPostingNodes(JSON.parse(script) as unknown, nodes);
     } catch {
-      continue;
+      // Ignore invalid JSON-LD scripts
     }
   }
 
@@ -184,24 +200,32 @@ export function extractSelectedWorkFormatIds(sourceHtml: string, domWorkFormatTe
     selected.add('REMOTE');
   }
 
-  const formatTextMatch = sourceHtml.match(/data-qa=["'](?:work-formats?(?:-text)?|vacancy-view-work-formats?)["'][^>]*>([\s\S]*?)<\/(?:div|span|dl|dd)>/i);
+  const formatTextMatch = sourceHtml.match(
+    /data-qa=["'](?:work-formats?(?:-text)?|vacancy-view-work-formats?)["'][^>]*>([\s\S]*?)<\/(?:div|span|dl|dd)>/i,
+  );
   if (formatTextMatch) {
     checkText(formatTextMatch[1].replace(/<[^>]+>/g, ' '));
   }
 
-  const ddMatch = sourceHtml.match(/<dt[^>]*>[^<]*Формат работы[^<]*<\/dt>\s*<dd[^>]*>([\s\S]*?)<\/dd>/i);
+  const ddMatch = sourceHtml.match(
+    /<dt[^>]*>[^<]*Формат работы[^<]*<\/dt>\s*<dd[^>]*>([\s\S]*?)<\/dd>/i,
+  );
   if (ddMatch) {
     checkText(ddMatch[1].replace(/<[^>]+>/g, ' '));
   }
 
-  const partsMatches = sourceHtml.matchAll(/class=["'][^"']*parts--[^"']*["'][^>]*>([\s\S]*?)<\/div>/gi);
+  const partsMatches = sourceHtml.matchAll(
+    /class=["'][^"']*parts--[^"']*["'][^>]*>([\s\S]*?)<\/div>/gi,
+  );
   for (const m of partsMatches) {
     checkText(m[1].replace(/<[^>]+>/g, ' '));
   }
 
   const decoded = sourceHtml.replace(/&#34;|&#x22;|&quot;/gi, '"');
 
-  for (const match of decoded.matchAll(/["'](?:selectedWorkFormats|workFormats)["']\s*:\s*\[([^\]]*)\]/gi)) {
+  for (const match of decoded.matchAll(
+    /["'](?:selectedWorkFormats|workFormats)["']\s*:\s*\[([^\]]*)\]/gi,
+  )) {
     const content = match[1];
     if (content.includes('{')) continue;
     const ids = [...content.matchAll(/["']([A-Z_]+)["']/g)].map((m) => m[1].toUpperCase());
@@ -239,7 +263,7 @@ export function checkLocationEligibility(
   if (onsiteCity) {
     return {
       eligible: true,
-      reason: `Подходит город: ${onsiteCity}${selectedWorkFormats.length ? ` (${selectedWorkFormats.join(', ')})` : ''}`,
+      reason: `Подходит город: ${onsiteCity}${selectedWorkFormats.length > 0 ? ` (${selectedWorkFormats.join(', ')})` : ''}`,
     };
   }
 

@@ -1,5 +1,5 @@
-import OpenAI from 'openai';
 import Anthropic from '@anthropic-ai/sdk';
+import OpenAI from 'openai';
 import {
   getAutomationConfig,
   getLlmConfig,
@@ -66,9 +66,10 @@ function buildAnthropicClient() {
   return new Anthropic({
     apiKey,
     baseURL: baseURL.replace(/\/v1\/?$/, ''),
-    defaultHeaders: provider === 'opencode-go' || provider === 'opencode-zen'
-      ? { [OPENCODE_SESSION_HEADER]: OPENCODE_SESSION_ID }
-      : undefined,
+    defaultHeaders:
+      provider === 'opencode-go' || provider === 'opencode-zen'
+        ? { [OPENCODE_SESSION_HEADER]: OPENCODE_SESSION_ID }
+        : undefined,
   });
 }
 
@@ -104,7 +105,7 @@ async function callAntigravity(
     type: string;
     content?: Array<{ type: string; text?: string }>;
   }
-  const data = await res.json() as { steps?: AntigravityStep[] };
+  const data = (await res.json()) as { steps?: AntigravityStep[] };
   // Response shape: { steps: [{ type: "thought" }, { type: "model_output", content: [{ type: "text", text: "..." }] }] }
   const text = (data.steps ?? [])
     .filter((s) => s.type === 'model_output')
@@ -205,24 +206,24 @@ export async function generateCoverLetter(
   description: string,
 ): Promise<CoverLetterResult> {
   const { model, provider } = getLlmConfig();
-  const useResume = (process.env.RESUME_MODE ?? '').toLowerCase() === 'true'
-    || process.argv.includes('--resume');
+  const useResume =
+    (process.env.RESUME_MODE ?? '').toLowerCase() === 'true' || process.argv.includes('--resume');
   const resume = useResume ? loadResume() : '';
 
   const profile = useResume && resume ? '' : buildProfilePrompt();
 
   const system = COVER_LETTER_SYSTEM_PROMPT;
-  const userPrompt = useResume && resume
-    ? (() => {
-        const profile = loadProfile();
-        return RESUME_MODE_PROMPT
-          .replace('[ВСТАВЬ CV]', resume)
-          .replace('[ВСТАВЬ ТЕКСТ ВАКАНСИИ]', description.slice(0, 2500))
-          .replace('[WORK_FORMAT]', profile.work_format || 'не указан')
-          .replace('[CITY]', profile.city || 'не указан')
-          .replace('[ONSITE_CITIES]', profile.onsite_cities.join(', ') || 'не указаны');
-      })()
-    : `ОБО МНЕ:
+  const userPrompt =
+    useResume && resume
+      ? (() => {
+          const profile = loadProfile();
+          return RESUME_MODE_PROMPT.replace('[ВСТАВЬ CV]', resume)
+            .replace('[ВСТАВЬ ТЕКСТ ВАКАНСИИ]', description.slice(0, 2500))
+            .replace('[WORK_FORMAT]', profile.work_format || 'не указан')
+            .replace('[CITY]', profile.city || 'не указан')
+            .replace('[ONSITE_CITIES]', profile.onsite_cities.join(', ') || 'не указаны');
+        })()
+      : `ОБО МНЕ:
 ${profile}
 
 ВАКАНСИЯ:
@@ -237,9 +238,10 @@ ${profile}
   const parts: string[] = [];
   for (let attempt = 1; attempt <= llmRetries; attempt++) {
     try {
-      const currentPrompt = parts.length > 0
-        ? `Продолжи письмо с того места, где оно оборвалось. Не повторяй уже написанное, начни сразу с продолжения:\n\n${parts[parts.length - 1].slice(-300)}`
-        : userPrompt;
+      const currentPrompt =
+        parts.length > 0
+          ? `Продолжи письмо с того места, где оно оборвалось. Не повторяй уже написанное, начни сразу с продолжения:\n\n${(parts.at(-1) ?? '').slice(-300)}`
+          : userPrompt;
       if (usesMessagesEndpoint(provider, model)) {
         const response = await buildAnthropicClient().messages.create({
           model,
@@ -252,16 +254,18 @@ ${profile}
           top_k: sampling.topK,
           messages: [{ role: 'user', content: currentPrompt }],
         });
-        const text = cleanCoverLetter(response.content
-          .filter((block): block is Anthropic.TextBlock => block.type === 'text')
-          .map((block) => block.text)
-          .join('')
+        const text = cleanCoverLetter(
+          response.content
+            .filter((block): block is Anthropic.TextBlock => block.type === 'text')
+            .map((block) => block.text)
+            .join(''),
         );
         if (!text) {
           const blockTypes = response.content.map((block) => block.type).join(', ') || 'нет';
-          const tokenHint = response.stop_reason === 'max_tokens'
-            ? 'Лимит токенов исчерпан до финального текста'
-            : 'Финальный текст не был выдан';
+          const tokenHint =
+            response.stop_reason === 'max_tokens'
+              ? 'Лимит токенов исчерпан до финального текста'
+              : 'Финальный текст не был выдан';
           return {
             text: '',
             reason: `Пустой ответ ${provider}/${model}: блоки [${blockTypes}], stop_reason=${response.stop_reason ?? 'не указан'}. ${tokenHint}`,
@@ -269,7 +273,9 @@ ${profile}
         }
         parts.push(text);
         if (response.stop_reason === 'max_tokens' && attempt < llmRetries) {
-          console.log(`  ⚠️  Письмо оборвано на лимите токенов, продолжаю (${attempt}/${llmRetries})...`);
+          console.log(
+            `  ⚠️  Письмо оборвано на лимите токенов, продолжаю (${attempt}/${llmRetries})...`,
+          );
           continue;
         }
         return { text: parts.join('\n\n') };
@@ -314,7 +320,9 @@ ${profile}
       }
       parts.push(text);
       if (response.choices[0]?.finish_reason === 'length' && attempt < llmRetries) {
-        console.log(`  ⚠️  Письмо оборвано на лимите токенов, продолжаю (${attempt}/${llmRetries})...`);
+        console.log(
+          `  ⚠️  Письмо оборвано на лимите токенов, продолжаю (${attempt}/${llmRetries})...`,
+        );
         continue;
       }
       return { text: parts.join('\n\n') };
@@ -325,7 +333,7 @@ ${profile}
         return { text: '', reason: `Ошибка провайдера после ${attempt} попыток: ${message}` };
       }
       console.log(`  ⚠️  Ошибка генерации письма (${attempt}/${llmRetries}), повторяю...`);
-      await new Promise((resolve) => setTimeout(resolve, attempt * 1_000));
+      await new Promise((resolve) => setTimeout(resolve, attempt * 1000));
     }
   }
 

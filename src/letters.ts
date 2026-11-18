@@ -12,12 +12,15 @@ function vacancyId(url: string): string | undefined {
 }
 
 function safeFilenamePart(value: string): string {
-  return value
-    .normalize('NFKC')
-    .replace(/[<>:"/\\|?*\u0000-\u001F]/g, '-')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .slice(0, 80);
+  return (
+    value
+      .normalize('NFKC')
+      // biome-ignore lint/suspicious/noControlCharactersInRegex: sanitize filesystem control characters
+      .replace(/[<>:"/\\|?*\u0000-\u001F]/g, '-')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 80)
+  );
 }
 
 export function coverLetterFilename(vacancy: Vacancy): string {

@@ -9,14 +9,14 @@ import {
   findHandledApplicationStatus,
   hasApplicationQuestionnaire,
   normalizeVacancyUrl,
-} from '../src/auto-apply.ts';
-import { getAutomationConfig, getLlmConfig, getLlmSampling } from '../src/config.ts';
-import { parseCsvList, loadResume } from '../src/config-loader.ts';
-import { findExcludedTerm } from '../src/exclusions.ts';
-import { saveCoverLetter, loadCachedCoverLetter } from '../src/letters.ts';
-import { cleanCoverLetter } from '../src/llm.ts';
-import { checkLocationEligibility, parseVacancyLocation } from '../src/vacancy-location.ts';
-import { loadSkippedKeys, addSkippedKey } from '../src/skip-state.ts';
+} from '../src/auto-apply.js';
+import { getAutomationConfig, getLlmConfig, getLlmSampling } from '../src/config.js';
+import { loadResume, parseCsvList } from '../src/config-loader.js';
+import { findExcludedTerm } from '../src/exclusions.js';
+import { loadCachedCoverLetter, saveCoverLetter } from '../src/letters.js';
+import { cleanCoverLetter } from '../src/llm.js';
+import { addSkippedKey, loadSkippedKeys } from '../src/skip-state.js';
+import { checkLocationEligibility, parseVacancyLocation } from '../src/vacancy-location.js';
 
 test('persists skipped vacancy keys across calls', () => {
   const original = process.env.CONFIG_DIR;
@@ -37,7 +37,10 @@ test('persists skipped vacancy keys across calls', () => {
 });
 
 test('normalizes vacancy URLs and removes tracking parameters', () => {
-  assert.equal(normalizeVacancyUrl('/vacancy/123?hhtmFrom=search#details'), 'https://hh.ru/vacancy/123');
+  assert.equal(
+    normalizeVacancyUrl('/vacancy/123?hhtmFrom=search#details'),
+    'https://hh.ru/vacancy/123',
+  );
 });
 
 test('passes excluded terms to HH search URL', () => {
@@ -48,9 +51,15 @@ test('passes excluded terms to HH search URL', () => {
 });
 
 test('detects rejected and already-submitted application statuses', () => {
-  assert.equal(findHandledApplicationStatus('Формат работы\nУдалённо\nВам отказали'), 'Работодатель отказал в отклике');
+  assert.equal(
+    findHandledApplicationStatus('Формат работы\nУдалённо\nВам отказали'),
+    'Работодатель отказал в отклике',
+  );
   assert.equal(findHandledApplicationStatus('Резюме доставлено'), 'Отклик уже отправлен');
-  assert.equal(findHandledApplicationStatus('Вы отказались от этой вакансии'), 'Вы уже отказались от вакансии');
+  assert.equal(
+    findHandledApplicationStatus('Вы отказались от этой вакансии'),
+    'Вы уже отказались от вакансии',
+  );
 });
 
 test('ignores status words inside vacancy description text', () => {
@@ -58,21 +67,30 @@ test('ignores status words inside vacancy description text', () => {
 });
 
 test('detects HH employer questionnaire requirement', () => {
-  assert.equal(hasApplicationQuestionnaire('Для отклика необходимо ответить на несколько вопросов работодателя'), true);
+  assert.equal(
+    hasApplicationQuestionnaire(
+      'Для отклика необходимо ответить на несколько вопросов работодателя',
+    ),
+    true,
+  );
   assert.equal(hasApplicationQuestionnaire('Отклик отправлен работодателю'), false);
 });
 
 test('deduplicates vacancy IDs across hostnames and query parameters', () => {
   const unique = deduplicateVacancies([
     { title: 'First', employer: 'Company', url: '/vacancy/123?hhtmFrom=search' },
-    { title: 'Duplicate', employer: 'Company', url: 'https://volgograd.hh.ru/vacancy/123?from=other' },
+    {
+      title: 'Duplicate',
+      employer: 'Company',
+      url: 'https://volgograd.hh.ru/vacancy/123?from=other',
+    },
     { title: 'Second', employer: 'Other', url: '/vacancy/456' },
   ]);
 
-  assert.deepEqual(unique.map((vacancy) => vacancy.url), [
-    'https://hh.ru/vacancy/123',
-    'https://hh.ru/vacancy/456',
-  ]);
+  assert.deepEqual(
+    unique.map((vacancy) => vacancy.url),
+    ['https://hh.ru/vacancy/123', 'https://hh.ru/vacancy/456'],
+  );
 });
 
 test('accepts configured on-site city', () => {
@@ -106,7 +124,8 @@ test('accepts remote work format from string array workFormats in page source', 
 });
 
 test('accepts remote work format from modern HH work-formats-text element HTML', () => {
-  const source = '<div data-qa="work-formats-text" class="magritte-text___p627s_3-0-28"><dl><dt>Формат работы: </dt><dd>удалённо</dd></dl></div>';
+  const source =
+    '<div data-qa="work-formats-text" class="magritte-text___p627s_3-0-28"><dl><dt>Формат работы: </dt><dd>удалённо</dd></dl></div>';
   const location = parseVacancyLocation([], source);
 
   assert.equal(location.isRemote, true);
@@ -115,7 +134,8 @@ test('accepts remote work format from modern HH work-formats-text element HTML',
 });
 
 test('accepts remote work format from Magritte parts header element HTML', () => {
-  const source = '<div class="parts--p7dhKej8hQy_BMUo"><p class="magritte-text">Полная занятость · Опыт 3–6 лет · График 5/2 · Удалённо</p></div>';
+  const source =
+    '<div class="parts--p7dhKej8hQy_BMUo"><p class="magritte-text">Полная занятость · Опыт 3–6 лет · График 5/2 · Удалённо</p></div>';
   const location = parseVacancyLocation([], source);
 
   assert.equal(location.isRemote, true);
@@ -170,21 +190,18 @@ test('rejects ON_SITE vacancy even when string-array workFormats contains REMOTE
 });
 
 test('remote work format is required for cities outside the onsite list', () => {
-  const onSiteSource = '&#34;workFormat&#34;:&#34;ON_SITE&#34;,&#34;address&#34;:{&#34;city&#34;:&#34;Волгоград&#34;}';
+  const onSiteSource =
+    '&#34;workFormat&#34;:&#34;ON_SITE&#34;,&#34;address&#34;:{&#34;city&#34;:&#34;Волгоград&#34;}';
   const onSite = parseVacancyLocation([], onSiteSource);
-  assert.equal(
-    checkLocationEligibility(onSite, ['Волгоград'], onSite.workFormats).eligible,
-    true,
-  );
+  assert.equal(checkLocationEligibility(onSite, ['Волгоград'], onSite.workFormats).eligible, true);
 
-  const moscowOnSiteSource = '&#34;workFormat&#34;:&#34;ON_SITE&#34;,&#34;address&#34;:{&#34;city&#34;:&#34;Москва&#34;}';
+  const moscowOnSiteSource =
+    '&#34;workFormat&#34;:&#34;ON_SITE&#34;,&#34;address&#34;:{&#34;city&#34;:&#34;Москва&#34;}';
   const moscow = parseVacancyLocation([], moscowOnSiteSource);
-  assert.equal(
-    checkLocationEligibility(moscow, ['Волгоград'], moscow.workFormats).eligible,
-    false,
-  );
+  assert.equal(checkLocationEligibility(moscow, ['Волгоград'], moscow.workFormats).eligible, false);
 
-  const moscowRemoteSource = '&#34;workFormat&#34;:&#34;REMOTE&#34;,&#34;address&#34;:{&#34;city&#34;:&#34;Москва&#34;}';
+  const moscowRemoteSource =
+    '&#34;workFormat&#34;:&#34;REMOTE&#34;,&#34;address&#34;:{&#34;city&#34;:&#34;Москва&#34;}';
   const moscowRemote = parseVacancyLocation([], moscowRemoteSource);
   assert.equal(
     checkLocationEligibility(moscowRemote, ['Волгоград'], moscowRemote.workFormats).eligible,
@@ -338,7 +355,8 @@ test('uses LLM sampling defaults that match recommended local settings', () => {
     'LLM_REPEAT_PENALTY',
     'LLM_FLASH_ATTENTION',
     'LLM_KEEP_MODEL_LOADED',
-  ]) delete process.env[key];
+  ])
+    delete process.env[key];
 
   const sampling = getLlmSampling();
   assert.equal(sampling.contextLength, 16_384);

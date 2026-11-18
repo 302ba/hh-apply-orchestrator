@@ -1,10 +1,10 @@
-import { chromium, type BrowserContext } from 'playwright';
-import { createInterface } from 'node:readline/promises';
-import { stdin as input, stdout as output } from 'node:process';
 import fs from 'node:fs';
 import path from 'node:path';
+import { stdin as input, stdout as output } from 'node:process';
+import { createInterface } from 'node:readline/promises';
 import { fileURLToPath } from 'node:url';
-import { SESSION_DIR, SESSION_FILE, ensureSessionDir } from './config.js';
+import { type BrowserContext, chromium } from 'playwright';
+import { ensureSessionDir, SESSION_DIR, SESSION_FILE } from './config.js';
 
 async function login(): Promise<void> {
   ensureSessionDir();
@@ -18,8 +18,10 @@ async function login(): Promise<void> {
   const page = await context.newPage();
   try {
     await page.goto('https://hh.ru/login', { waitUntil: 'domcontentloaded', timeout: 60_000 });
-  } catch (err) {
-    console.warn('⚠️  Страница загружается дольше обычного, но окно браузера открыто. Продолжай вход.');
+  } catch {
+    console.warn(
+      '⚠️  Страница загружается дольше обычного, но окно браузера открыто. Продолжай вход.',
+    );
   }
 
   console.log('\n📌 Инструкция:');

@@ -1,6 +1,6 @@
-import path from 'node:path';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
+import path from 'node:path';
 import 'dotenv/config';
 import { fileConsole } from './logger.js';
 
@@ -19,7 +19,15 @@ export interface ApplyResult {
   reason: string;
 }
 
-export type LlmProvider = 'openai' | 'openrouter' | 'opencode-go' | 'opencode-zen' | 'lmstudio' | 'ollama' | 'llamacpp' | 'antigravity';
+export type LlmProvider =
+  | 'openai'
+  | 'openrouter'
+  | 'opencode-go'
+  | 'opencode-zen'
+  | 'lmstudio'
+  | 'ollama'
+  | 'llamacpp'
+  | 'antigravity';
 
 export interface LlmConfig {
   provider: LlmProvider;
@@ -41,7 +49,10 @@ export interface AutomationConfig {
   generateOnly: boolean;
 }
 
-const PROVIDER_PRESETS: Record<LlmProvider, { baseURL: string; defaultModel: string; envKey: string; requiresKey: boolean }> = {
+const PROVIDER_PRESETS: Record<
+  LlmProvider,
+  { baseURL: string; defaultModel: string; envKey: string; requiresKey: boolean }
+> = {
   openai: {
     baseURL: 'https://api.openai.com/v1',
     defaultModel: 'gpt-4o-mini',
@@ -123,11 +134,12 @@ export function getLlmConfig(): LlmConfig {
   // Provider-specific key wins. For openai/openrouter, OPENAI_API_KEY is a real fallback.
   // For antigravity, GEMINI_API_KEY is also accepted. For local providers, a placeholder suffices.
   const providerSpecific = process.env[preset.envKey];
-  const fallback = provider === 'openai'
-    ? (process.env.OPENAI_API_KEY ?? '')
-    : provider === 'antigravity'
-      ? (process.env.GEMINI_API_KEY ?? '')
-      : '';
+  const fallback =
+    provider === 'openai'
+      ? (process.env.OPENAI_API_KEY ?? '')
+      : provider === 'antigravity'
+        ? (process.env.GEMINI_API_KEY ?? '')
+        : '';
   let apiKey = providerSpecific ?? fallback ?? '';
   if (!apiKey && !preset.requiresKey) apiKey = 'local';
 
@@ -187,7 +199,7 @@ export function getAutomationConfig(): AutomationConfig {
     delayBetweenAppliesSeconds: readNumber('HH_DELAY_BETWEEN_APPLIES_SECONDS', 7, 0),
     readRetries: readNumber('HH_READ_RETRIES', 2, 1),
     llmRetries: readNumber('LLM_RETRIES', 2, 1),
-    llmMaxTokens: readNumber('LLM_MAX_TOKENS', 1_024, 1),
+    llmMaxTokens: readNumber('LLM_MAX_TOKENS', 1024, 1),
     mode: readApplyMode(),
     dryRun: readDryRun(),
     generateOnly: process.argv.includes('--generate'),
@@ -231,5 +243,5 @@ export function sessionExists(): boolean {
 }
 
 export const OPENAI_API_KEY = process.env.OPENAI_API_KEY ?? '';
-export const OPENCODE_SESSION_HEADER = "x-opencode-session";
+export const OPENCODE_SESSION_HEADER = 'x-opencode-session';
 export const OPENCODE_SESSION_ID = crypto.randomUUID();
